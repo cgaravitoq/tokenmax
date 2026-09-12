@@ -1,0 +1,67 @@
+{
+  "$schema": "https://btca.dev/btca.schema.json",
+  "dataDirectory": ".btca",
+  "providerTimeoutMs": 300000,
+  "resources": [
+    {
+      "type": "local",
+      "name": "tokenmax",
+      "path": ".",
+      "specialNotes": "Source-of-truth tokenmax repository. Inspect AGENTS.md, packages/collector, package.json, and the future apps/worker before proposing changes."
+    },
+    {
+      "type": "git",
+      "name": "astro",
+      "url": "https://github.com/withastro/docs",
+      "branch": "main",
+      "searchPaths": ["src/content/docs", "src/content/i18n"],
+      "specialNotes": "Use for Astro 7 pages, components, endpoints, SSR, routing, i18n, and Cloudflare adapter guidance."
+    },
+    {
+      "type": "git",
+      "name": "cloudflare-docs",
+      "url": "https://github.com/cloudflare/cloudflare-docs",
+      "branch": "main",
+      "searchPaths": [
+        "src/content/docs/workers",
+        "src/content/docs/d1",
+        "src/content/docs/r2"
+      ],
+      "specialNotes": "Use for Cloudflare Workers, Wrangler, D1 migrations and queries, and R2 bindings."
+    },
+    {
+      "type": "git",
+      "name": "bun",
+      "url": "https://github.com/oven-sh/bun",
+      "branch": "main",
+      "searchPaths": ["docs", "packages", "src"],
+      "specialNotes": "Use for Bun package manager/runtime behavior, scripts, lockfile behavior, workspaces, test runner, and compatibility issues."
+    },
+    {
+      "type": "git",
+      "name": "zod",
+      "url": "https://github.com/colinhacks/zod",
+      "branch": "main",
+      "searchPaths": ["packages", "wiki", "rfcs"],
+      "specialNotes": "Use for Zod v4 schemas, parsing, validation, transforms, and TypeScript inference in internal CLIs."
+    },
+    {
+      "type": "git",
+      "name": "biome",
+      "url": "https://github.com/biomejs/biome",
+      "branch": "main",
+      "searchPaths": ["crates", "packages/@biomejs", "plugins"],
+      "specialNotes": "Use for Biome formatting/lint rules, config schema, ignore behavior, and diagnostics. This repo uses Biome instead of ESLint/Prettier."
+    },
+    {
+      "type": "git",
+      "name": "vitest",
+      "url": "https://github.com/vitest-dev/vitest",
+      "branch": "main",
+      "searchPaths": ["docs", "packages", "examples"],
+      "specialNotes": "Use for Vitest 4 projects mode, jsdom setup, coverage, assertions, and workspace testing patterns."
+    }
+  ],
+  "model": "gpt-5.4",
+  "provider": "openai"
+}

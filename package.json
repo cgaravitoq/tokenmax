@@ -1,0 +1,33 @@
+{
+  "name": "tokenmax",
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
+    "oxlint": "1.82.0",
+    "typescript": "6.0.3",
+    "ultracite": "7.11.1"
+  },
+  "engines": {
+    "node": "24.19.0"
+  },
+  "packageManager": "bun@1.3.14",
+  "private": true,
+  "scripts": {
+    "audit:production": "bun audit --production",
+    "check-types": "bun --filter '*' check-types",
+    "format": "biome check . --files-ignore-unknown=true",
+    "format:fix": "biome check . --write --files-ignore-unknown=true",
+    "lint:slop": "oxlint -c oxlint.config.mts --deny-warnings",
+    "prepare": "husky",
+    "test": "bun --filter '*' test",
+    "test:dependency-policy": "bun test scripts/dependabot-config.test.ts",
+    "test:watch": "bun --filter '*' test:watch"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

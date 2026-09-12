@@ -1,0 +1,140 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 80
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "trailingCommas": "all",
+      "semicolons": "always"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "a11y": {
+        "recommended": false,
+        "useAltText": "error",
+        "useButtonType": "error",
+        "noSvgWithoutTitle": "error"
+      },
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedPrivateClassMembers": "off",
+        "noUnusedVariables": "error",
+        "noUnusedFunctionParameters": "error",
+        "useExhaustiveDependencies": "off",
+        "useHookAtTopLevel": "off",
+        "noChildrenProp": "off",
+        "noVoidTypeReturn": "off",
+        "noUnreachable": "error",
+        "noConstantCondition": "off",
+        "noConstructorReturn": "off"
+      },
+      "security": {
+        "noDangerouslySetInnerHtml": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off",
+        "useConsistentArrayType": {
+          "level": "warn",
+          "options": {
+            "syntax": "shorthand"
+          }
+        },
+        "useImportType": "warn",
+        "noParameterAssign": "off",
+        "useAsConstAssertion": "error",
+        "useDefaultParameterLast": "error",
+        "useEnumInitializers": "error",
+        "useSelfClosingElements": "error",
+        "useSingleVarDeclarator": "error",
+        "noUnusedTemplateLiteral": "error",
+        "useNumberNamespace": "error",
+        "noInferrableTypes": "error",
+        "noUselessElse": "error"
+      },
+      "suspicious": {
+        "useIterableCallbackReturn": "off",
+        "noExplicitAny": "off",
+        "noConfusingVoidType": "off",
+        "noArrayIndexKey": "off",
+        "noAssignInExpressions": "off",
+        "noSelfCompare": "off",
+        "noImplicitAnyLet": "off",
+        "noShadowRestrictedNames": "off",
+        "noRedeclare": "off",
+        "noThenProperty": "off",
+        "noFallthroughSwitchClause": "off",
+        "noDocumentCookie": "off",
+        "noTemplateCurlyInString": "off",
+        "noSuspiciousSemicolonInJsx": "off",
+        "useAdjacentOverloadSignatures": "off"
+      },
+      "complexity": {
+        "noUselessTypeConstraint": "off",
+        "noUselessFragments": "off",
+        "noStaticOnlyClass": "off",
+        "useOptionalChain": "off",
+        "useLiteralKeys": "off",
+        "noArguments": "off",
+        "noThisInStatic": "off",
+        "noCommaOperator": "off"
+      },
+      "performance": {
+        "noAccumulatingSpread": "off",
+        "noBarrelFile": "off",
+        "noReExportAll": "off",
+        "noImgElement": "off"
+      },
+      "nursery": {
+        "useSortedClasses": "off"
+      }
+    }
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/*.css",
+      "!apps/worker/worker-configuration.d.ts"
+    ]
+  },
+  "json": {
+    "parser": {
+      "allowComments": true,
+      "allowTrailingCommas": true
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.astro"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          }
+        }
+      }
+    }
+  ]
+}

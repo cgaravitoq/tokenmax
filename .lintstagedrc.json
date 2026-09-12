@@ -1,0 +1,4 @@
+{
+  "*.{js,cjs,mjs,ts,mts,jsx,tsx,astro,vue,json,jsonc}": "biome check --write --no-errors-on-unmatched",
+  "*.{js,cjs,mjs,ts,mts,jsx,tsx,astro,vue}": "bun run lint:slop"
+}
