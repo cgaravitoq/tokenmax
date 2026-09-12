@@ -17,10 +17,13 @@
   "private": true,
   "scripts": {
     "audit:production": "bun audit --production",
+    "check-types": "bun --filter '*' check-types",
     "format": "biome check . --files-ignore-unknown=true",
     "format:fix": "biome check . --write --files-ignore-unknown=true",
     "lint:slop": "oxlint -c oxlint.config.mts --deny-warnings",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test": "bun --filter '*' test",
+    "test:watch": "bun --filter '*' test:watch"
   },
   "workspaces": [
     "apps/*",

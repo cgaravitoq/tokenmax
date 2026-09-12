@@ -1,0 +1,79 @@
+{
+  "daily": [
+    {
+      "agent": "all",
+      "period": "2026-09-09",
+      "agents": [
+        {
+          "agent": "claude",
+          "modelBreakdowns": [
+            {
+              "modelName": "claude-opus-5",
+              "inputTokens": 10640,
+              "outputTokens": 2512793,
+              "cacheCreationTokens": 14820642,
+              "cacheReadTokens": 628581555,
+              "cost": 506.93065499999983
+            },
+            {
+              "modelName": "claude-sonnet-5",
+              "inputTokens": 0,
+              "outputTokens": 0,
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0
+            }
+          ]
+        },
+        {
+          "agent": "pi",
+          "modelBreakdowns": [
+            {
+              "modelName": "[pi] deepseek-v4-flash",
+              "inputTokens": 9863,
+              "outputTokens": 3,
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.00217184
+            },
+            {
+              "modelName": "deepseek-v4-flash",
+              "inputTokens": 100,
+              "outputTokens": 50,
+              "cacheCreationTokens": 10,
+              "cacheReadTokens": 20,
+              "cost": 0.5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "agent": "all",
+      "period": "2026-09-10",
+      "agents": [
+        {
+          "agent": "codex",
+          "modelBreakdowns": [
+            {
+              "modelName": "gpt-5.6-terra",
+              "inputTokens": 2675362,
+              "outputTokens": 247846,
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 45556480,
+              "cost": 17.436172
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 14820652,
+    "cacheReadTokens": 674138055,
+    "inputTokens": 2696965,
+    "outputTokens": 2760692,
+    "totalCost": 524.869,
+    "totalTokens": 677796364
+  }
+}
