@@ -85,4 +85,19 @@ describe("wrangler configuration", () => {
       }),
     ).toBe(false);
   });
+
+  it("rejects a wrong binding, name, id and migrations directory", () => {
+    const database = validConfig.d1_databases[0];
+    for (const wrong of [
+      { ...database, binding: "OTHER" },
+      { ...database, database_name: "" },
+      { ...database, database_id: "not-a-uuid" },
+      { ...database, migrations_dir: "./migration" },
+    ]) {
+      expect(
+        bindsTokenmaxDatabase({ ...validConfig, d1_databases: [wrong] }),
+      ).toBe(false);
+    }
+    expect(bindsTokenmaxDatabase({ ...validConfig, name: "" })).toBe(false);
+  });
 });
