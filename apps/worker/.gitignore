@@ -1,0 +1,4 @@
+.astro
+.wrangler
+.dev.vars*
+!.dev.vars.example

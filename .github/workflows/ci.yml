@@ -66,3 +66,6 @@ jobs:
 
       - name: Audit production dependencies
         run: bun run audit:production
+
+      - name: Build
+        run: bun run build
