@@ -141,7 +141,7 @@ describe("collect", () => {
 describe("install", () => {
   const cliPath = "/repo/packages/tokenmax-collector/src/cli.ts";
   const bunxCliPath =
-    "/private/var/folders/q3/f_p7mj817rjd4cdfd283z0sw0000gn/T/bunx-501-tsx@latest/node_modules/tokenmax-collector/src/cli.ts";
+    "/private/var/folders/test/cache/T/bunx-501-tokenmax-collector@latest/node_modules/tokenmax-collector/src/cli.ts";
   const execPath = "/opt/bun/bin/bun";
   const installIo = {
     cliPath,

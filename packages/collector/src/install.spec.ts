@@ -8,7 +8,7 @@ import { collectorPaths } from "./paths";
 const execPath = "/opt/bun/bin/bun";
 const cliPath = "/repo/packages/tokenmax-collector/src/cli.ts";
 const bunxCliPath =
-  "/private/var/folders/q3/f_p7mj817rjd4cdfd283z0sw0000gn/T/bunx-501-tsx@latest/node_modules/tokenmax-collector/src/cli.ts";
+  "/private/var/folders/test/cache/T/bunx-501-tokenmax-collector@latest/node_modules/tokenmax-collector/src/cli.ts";
 const cacheCliPath =
   "/tmp/tokenmax-bun/install/cache/tokenmax-collector/src/cli.ts";
 const machineZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -267,12 +267,12 @@ describe("install", () => {
 
   it("accepts a globally installed path", async () => {
     const home = await makeHome();
+    const paths = collectorPaths({ home });
     const globalCliPath =
       "/tmp/tokenmax-bun/install/global/node_modules/tokenmax-collector/src/cli.ts";
 
     const plan = await install({
       cliPath: globalCliPath,
-      dryRun: true,
       env: { home },
       execPath,
       key: "tmx_secret_value",
@@ -281,7 +281,13 @@ describe("install", () => {
       url: "http://localhost:8797",
     });
 
-    expect(plan.files[0]?.contents).toContain(globalCliPath);
+    expect(plan.files[0]?.path).toBe(paths.plist);
+    expect(await readFile(paths.plist, "utf8")).toContain(globalCliPath);
+    expect(JSON.parse(await readFile(paths.configFile, "utf8"))).toEqual({
+      key: "tmx_secret_value",
+      timezone: machineZone,
+      url: "http://localhost:8797",
+    });
   });
 
   it("refuses a platform it cannot schedule", async () => {
