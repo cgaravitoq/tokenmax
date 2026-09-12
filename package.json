@@ -23,6 +23,7 @@
     "lint:slop": "oxlint -c oxlint.config.mts --deny-warnings",
     "prepare": "husky",
     "test": "bun --filter '*' test",
+    "test:dependency-policy": "bun test scripts/dependabot-config.test.ts",
     "test:watch": "bun --filter '*' test:watch"
   },
   "workspaces": [
