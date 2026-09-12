@@ -21,7 +21,7 @@ tokenmax install --url <url> --key <key>
 ```
 
 Pass `--timezone <zone>` to `install` to override the machine's IANA timezone.
-Installation through `bunx` is refused because its temporary or cached package path can disappear while the schedule still points to it.
+Non-dry `tokenmax install` refuses Bun paths containing `/install/cache/` or a `bunx-<digits>-<package>` directory segment because those paths can disappear while a schedule still points to them.
 Run `tokenmax collect` to report the last 14 calendar days immediately.
 
 To upgrade, reinstall the latest package and regenerate the schedule with the existing key:
