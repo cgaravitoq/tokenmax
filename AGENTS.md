@@ -56,9 +56,12 @@ The worker lands with P2.
 
 ## Collector
 
-The collector is `packages/collector`, npm name `tokenmax-collector`, and it requires Bun because `src/cli.ts` runs as TypeScript.
+The collector is `packages/collector`, npm name `tokenmax-collector`, bin `tokenmax`, and requires Bun 1.3.14 or newer because `src/cli.ts` runs as TypeScript.
+Install it with `bun add -g tokenmax-collector` once published, then run `tokenmax install --url <url> --key <key>` with optional `--timezone <zone>`.
+Do not use `bunx`: `install` refuses temporary and cache paths because a persisted schedule must point to the global package.
 By default it reads `~/.config/tokenmax/config.json`, with `TOKENMAX_HOME` and `XDG_CONFIG_HOME` able to change that location, and sends the report to `POST /api/report`.
 `install` writes that config plus a launchd agent on macOS or a systemd user timer on Linux, and Windows is unsupported.
+Upgrade with `bun add -g tokenmax-collector@latest`, rerun `tokenmax install` with the existing key, then reload the schedule using the printed command.
 
 ## Keys
 
