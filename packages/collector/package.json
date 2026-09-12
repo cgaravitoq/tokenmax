@@ -1,9 +1,26 @@
 {
   "name": "tokenmax-collector",
   "version": "0.1.0",
-  "private": true,
   "description": "Report local ccusage token usage to a tokenmax instance",
   "type": "module",
+  "bin": {
+    "tokenmax": "./src/cli.ts"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "!src/**/*.spec.ts",
+    "!src/test/**"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cgaravitoq/tokenmax.git",
+    "directory": "packages/collector"
+  },
+  "engines": {
+    "bun": ">=1.3.14"
+  },
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run",
