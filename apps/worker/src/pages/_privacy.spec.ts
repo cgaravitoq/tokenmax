@@ -42,6 +42,12 @@ describe("GET /privacy", () => {
       expect(html).toContain(text);
     }
 
+    expect(
+      html.split(
+        '<a href="mailto:privacy@example.com">privacy@example.com</a>',
+      ),
+    ).toHaveLength(3);
+
     for (const text of ["X0000000T", "NIF", "Springfield"]) {
       expect(html).not.toContain(text);
     }
@@ -66,6 +72,17 @@ describe("GET /privacy", () => {
       expect(html).toContain(text);
     }
 
-    expect(html).not.toContain("Jane Doe");
+    expect(
+      html.split('<a href="mailto:dpo@example.org">dpo@example.org</a>'),
+    ).toHaveLength(3);
+
+    for (const text of [
+      "Jane Doe",
+      "privacy@example.com",
+      "Example DPA",
+      "https://dpa.example",
+    ]) {
+      expect(html).not.toContain(text);
+    }
   });
 });
