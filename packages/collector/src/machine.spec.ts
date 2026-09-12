@@ -11,9 +11,7 @@ describe("machineId", () => {
   });
 
   it("replaces the characters the server refuses", () => {
-    expect(machineId("Carlos MacBook Pro", "0:0")).toBe(
-      "Carlos-MacBook-Pro-0-0",
-    );
+    expect(machineId("Test MacBook Pro", "0:0")).toBe("Test-MacBook-Pro-0-0");
   });
 
   it("replaces non ascii characters", () => {
@@ -27,7 +25,7 @@ describe("machineId", () => {
   });
 
   it("falls back to the hostname alone without a platform uuid", () => {
-    expect(machineId("Carlos MacBook Pro", null)).toBe("Carlos-MacBook-Pro");
+    expect(machineId("Test MacBook Pro", null)).toBe("Test-MacBook-Pro");
   });
 });
 

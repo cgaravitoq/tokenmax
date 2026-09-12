@@ -140,6 +140,8 @@ describe("collect", () => {
 
 describe("install", () => {
   const cliPath = "/repo/packages/tokenmax-collector/src/cli.ts";
+  const bunxCliPath =
+    "/private/var/folders/test/cache/T/bunx-501-tokenmax-collector@latest/node_modules/tokenmax-collector/src/cli.ts";
   const execPath = "/opt/bun/bin/bun";
   const installIo = {
     cliPath,
@@ -202,6 +204,22 @@ describe("install", () => {
     expect(result).toEqual({
       code: 1,
       stderr: ["invalid timezone: Mars/Olympus"],
+      stdout: [],
+    });
+    expect(await readdir(home)).toEqual([]);
+  });
+
+  it("prints the bunx path error and exits 1 without writing", async () => {
+    const result = await run(["install", "--url", url, "--key", key], {
+      ...installIo,
+      cliPath: bunxCliPath,
+    });
+
+    expect(result).toEqual({
+      code: 1,
+      stderr: [
+        "refusing to schedule from a bunx path; install globally: bun add -g tokenmax-collector, then run: tokenmax install --url <url> --key <key>",
+      ],
       stdout: [],
     });
     expect(await readdir(home)).toEqual([]);

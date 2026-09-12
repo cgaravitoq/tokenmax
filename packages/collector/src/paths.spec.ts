@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { collectorPaths } from "./paths";
 
-const home = "/home/carlos";
+const home = "/home/user";
 
 describe("collectorPaths", () => {
   it("keeps the macOS log directory when the platform is unknown", () => {

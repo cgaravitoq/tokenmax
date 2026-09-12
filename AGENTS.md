@@ -61,9 +61,15 @@ The privacy page renders the four `PRIVACY_*` secrets, so every instance carries
 
 ## Collector
 
-The collector is `packages/collector`, npm name `tokenmax-collector`, and it requires Bun because `src/cli.ts` runs as TypeScript.
+The collector is `packages/collector`, npm name `tokenmax-collector`, bin `tokenmax`, and requires Bun 1.3.14 or newer because `src/cli.ts` runs as TypeScript.
+Install it with `bun add -g tokenmax-collector` once published, then run `tokenmax install --url <url> --key <key>` with optional `--timezone <zone>`.
+Use the global package for scheduling; non-dry `install` rejects Bun's `/install/cache/` and `bunx-<digits>-<package>` paths, while `--dry-run` can still print their plans.
 By default it reads `~/.config/tokenmax/config.json`, with `TOKENMAX_HOME` and `XDG_CONFIG_HOME` able to change that location, and sends the report to `POST /api/report`.
 `install` writes that config plus a launchd agent on macOS or a systemd user timer on Linux, and Windows is unsupported.
+Upgrade with `bun add -g tokenmax-collector@latest`, then run `tokenmax install --url <url> --key <existing-key>` again.
+On macOS, run `launchctl bootout gui/<uid>/dev.tokenmax.collector`, then run the printed `launchctl bootstrap` command.
+On Linux, run `systemctl --user daemon-reload`, then run the printed `systemctl --user enable --now tokenmax.timer` command.
+`tokenmax collect` reports the last 14 calendar days to `/api/report`.
 
 ## Keys
 

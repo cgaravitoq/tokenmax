@@ -7,6 +7,10 @@ import { collectorPaths } from "./paths";
 
 const execPath = "/opt/bun/bin/bun";
 const cliPath = "/repo/packages/tokenmax-collector/src/cli.ts";
+const bunxCliPath =
+  "/private/var/folders/test/cache/T/bunx-501-tokenmax-collector@latest/node_modules/tokenmax-collector/src/cli.ts";
+const cacheCliPath =
+  "/tmp/tokenmax-bun/install/cache/tokenmax-collector/src/cli.ts";
 const machineZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const homes: string[] = [];
@@ -212,6 +216,78 @@ describe("install", () => {
       plistFor(home).trimEnd(),
       `load: launchctl bootstrap gui/501 ${paths.plist}`,
     ]);
+  });
+
+  it.each([bunxCliPath, cacheCliPath])(
+    "refuses to schedule from an ephemeral path",
+    async (ephemeralCliPath) => {
+      const home = await makeHome();
+
+      await expect(
+        install({
+          cliPath: ephemeralCliPath,
+          env: { home },
+          execPath,
+          key: "tmx_secret_value",
+          platform: "darwin",
+          uid: 501,
+          url: "http://localhost:8797",
+        }),
+      ).rejects.toThrow(
+        "refusing to schedule from a bunx path; install globally: bun add -g tokenmax-collector, then run: tokenmax install --url <url> --key <key>",
+      );
+
+      expect(await readdir(home)).toEqual([]);
+    },
+  );
+
+  it.each([bunxCliPath, cacheCliPath])(
+    "prints an ephemeral path during a dry run",
+    async (ephemeralCliPath) => {
+      const home = await makeHome();
+      const lines: string[] = [];
+
+      const plan = await install({
+        cliPath: ephemeralCliPath,
+        dryRun: true,
+        env: { home },
+        execPath,
+        key: "tmx_secret_value",
+        log: (line) => lines.push(line),
+        platform: "darwin",
+        uid: 501,
+        url: "http://localhost:8797",
+      });
+
+      expect(plan.files[0]?.contents).toContain(ephemeralCliPath);
+      expect(lines).toContain(plan.files[0]?.contents.trimEnd());
+      expect(await readdir(home)).toEqual([]);
+    },
+  );
+
+  it("accepts a globally installed path", async () => {
+    const home = await makeHome();
+    const paths = collectorPaths({ home });
+    const globalCliPath =
+      "/tmp/tokenmax-bun/install/global/node_modules/tokenmax-collector/src/cli.ts";
+
+    const plan = await install({
+      cliPath: globalCliPath,
+      env: { home },
+      execPath,
+      key: "tmx_secret_value",
+      platform: "darwin",
+      uid: 501,
+      url: "http://localhost:8797",
+    });
+
+    expect(plan.files[0]?.path).toBe(paths.plist);
+    expect(await readFile(paths.plist, "utf8")).toContain(globalCliPath);
+    expect(JSON.parse(await readFile(paths.configFile, "utf8"))).toEqual({
+      key: "tmx_secret_value",
+      timezone: machineZone,
+      url: "http://localhost:8797",
+    });
   });
 
   it("refuses a platform it cannot schedule", async () => {
