@@ -56,7 +56,7 @@ const msg = "a" + "b";
 
 Always include a `<reason>`. A bare `biome-ignore` without justification should itself be flagged.
 
-For whole files or directories, add a negated glob to `biome.json` → `files.includes`, which is the only ignore surface Biome 2.x has. There is no `files.ignore` and no `linter.ignore`.
+For whole files or directories, add a negated glob to `files.includes` in `biome.json`; this repository also respects `.gitignore` through `vcs.useIgnoreFile`.
 
 ```json
 "files": { "includes": ["**", "!**/dist", "!apps/worker/worker-configuration.d.ts"] }
@@ -64,7 +64,7 @@ For whole files or directories, add a negated glob to `biome.json` → `files.in
 
 ## Common rules encountered
 
-These are enabled in this repository's `biome.json`. A `biome-ignore` for anything else is dead weight.
+The table lists examples of enabled rules; check `biome.json`, its preset and its overrides before adding a suppression.
 
 | Rule | Level | Meaning |
 |------|-------|---------|
@@ -110,11 +110,11 @@ If you see the commit aborted by Biome, run `bun run format:fix` locally, review
 
 ## CI
 
-`.github/workflows/ci.yml` runs `bun run format` (check mode) and then `bun run lint:slop` - any unformatted or lint-failing code blocks the PR. Always run `format:fix` before pushing.
+The `ci` workflow runs `bun run format` and `bun run lint:slop` with their configured rules and exclusions; run `bun run format:fix` before pushing.
 
 ## Gotchas
 
-- Biome respects `.gitignore` by default - don't duplicate entries in `biome.json`
+- See `.lintstagedrc.json` and `biome.json` for the configured file patterns and exclusions
 - Biome does not currently parse `.mdx` - only `.ts`, `.tsx`, `.js`, `.jsx`, `.json`
 - If Biome and TypeScript disagree on import order after a rebase, run `format:fix` first
-- Don't commit a `.prettierrc` / `.eslintrc` - this repo uses only Biome
+- Don't commit a `.prettierrc` / `.eslintrc` - this repository uses Biome and oxlint

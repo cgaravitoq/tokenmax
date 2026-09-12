@@ -38,9 +38,9 @@ Allowed types (from `@commitlint/config-conventional`):
 Examples:
 
 ```
-feat(blog): add RSS feed route
-fix(i18n): handle missing translation keys in server components
-chore(deps): bump astro to 7.1.6
+feat(collector): add local usage reporting
+fix(collector): handle missing configuration
+chore(deps): update collector dependencies
 docs: update AGENTS.md with new tooling packages
 ```
 
@@ -61,9 +61,9 @@ bunx lint-staged
 bun run check-types
 ```
 
-**`lint-staged`** (`.lintstagedrc.json`): Biome `check --write` on staged `js`, `ts`, `jsx`, `tsx`, and `json` files; and `bun run lint:slop` (oxlint, anti-slop preset) on staged `js`, `cjs`, `mjs`, `ts`, `mts`, `tsx`, and `astro` files. Biome auto-fixes and re-stages, while oxlint only reports, so a rule hit aborts the commit until the code is fixed.
+**`lint-staged`** (`.lintstagedrc.json`): lint-staged runs Biome on staged files matching `*.{js,cjs,mjs,ts,mts,jsx,tsx,astro,vue,json,jsonc}` and `bun run lint:slop` on `*.{js,cjs,mjs,ts,mts,jsx,tsx,astro,vue}`; Biome applies fixes and lint-staged re-stages them, while oxlint reports failures, so a rule hit aborts the commit until the code is fixed.
 
-**`check-types`**: runs `tsc --noEmit` in every workspace. If TypeScript errors exist anywhere in the repository, the commit aborts.
+**`check-types`**: runs each workspace's `check-types` script, currently `tsc --noEmit` over `packages/collector/src`, and a failure aborts the commit.
 
 ## Commit-msg hook
 
@@ -88,7 +88,7 @@ git add packages/collector/src/cli.ts
 git add packages/collector/package.json
 
 # Commit (hooks run automatically)
-git commit -m "feat(header): add language switcher"
+git commit -m "feat(collector): add local usage reporting"
 
 # If the hook fails, the commit did NOT happen.
 # Fix the issue, re-stage the fixed file, and commit again (NEW commit, not --amend)
@@ -107,10 +107,9 @@ For longer messages, use a HEREDOC to preserve formatting:
 
 ```bash
 git commit -m "$(cat <<'EOF'
-feat(blog): add markdown export endpoint
+feat(collector): add local usage reporting
 
-Adds /api/blog/[slug]/markdown route that returns the raw Markdown
-source of a post so readers can copy it into their own tools.
+Adds local usage reporting through packages/collector/src/cli.ts.
 EOF
 )"
 ```

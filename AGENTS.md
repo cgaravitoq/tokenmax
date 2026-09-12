@@ -15,7 +15,7 @@ tokenmax/
 ## Stack
 
 - Bun 1.3.14 workspaces (`apps/*` and `packages/*`), no Turbo.
-- TypeScript 6 in strict mode with Node 24.19.0 as the engine floor.
+- TypeScript 6 in strict mode, with Node 24.19.0 declared in `engines.node`.
 - Biome 2.5 formats and lints, and oxlint 1.82 with the ultracite anti-slop preset is the second linter.
 - Vitest 4.1 runs the workspace specs, and `bun test` runs the dependency policy test.
 - The collector spawns ccusage 20.0.20, pinned exact because it reads an undocumented JSON shape through a per-platform native binary.
@@ -45,7 +45,7 @@ bun run audit:production
 ## Quality gates
 
 - `bun install --frozen-lockfile`, `bun run format`, `bun run lint:slop`, `bun run check-types`, `bun run test`, `bun run test:dependency-policy` and `bun run audit:production` must pass before a pull request merges.
-- The `ci` workflow runs exactly those gates on every pull request, on `main` pushes, on merge queue entries and on manual dispatch.
+- The `ci` workflow runs these gates on its configured pull request, `main` push, merge queue and manual dispatch events, and also lints pull request titles.
 - `.husky/pre-commit` runs lint-staged and the workspace type check, and `.husky/commit-msg` runs commitlint.
 - A Dependabot patch merges itself only after `gh pr checks --watch --fail-fast` reports every check green, and a patch that touches ccusage always waits for a human.
 - Never bypass hooks, and never create Cloudflare resources from repository automation.
@@ -57,7 +57,7 @@ The worker lands with P2.
 ## Collector
 
 The collector is `packages/collector`, npm name `tokenmax-collector`, and it requires Bun because `src/cli.ts` runs as TypeScript.
-It reads `~/.config/tokenmax/config.json` and sends the report to `POST /api/report`.
+By default it reads `~/.config/tokenmax/config.json`, with `TOKENMAX_HOME` and `XDG_CONFIG_HOME` able to change that location, and sends the report to `POST /api/report`.
 `install` writes that config plus a launchd agent on macOS or a systemd user timer on Linux, and Windows is unsupported.
 
 ## Keys
