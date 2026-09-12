@@ -1,0 +1,20 @@
+---
+export const prerender = false;
+
+Astro.response.status = 404;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Not found</title>
+  </head>
+  <body>
+    <main>
+      <h1>Not found</h1>
+      <p>There is nothing at this address.</p>
+      <p><a href="/">Home</a></p>
+    </main>
+  </body>
+</html>

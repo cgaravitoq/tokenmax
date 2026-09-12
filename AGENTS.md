@@ -52,7 +52,12 @@ bun run audit:production
 
 ## Worker
 
-The worker lands with P2.
+The worker is `apps/worker`, package `@tokenmax/worker`: Astro 7 with the Cloudflare adapter, a Hono 4 API under `src/server`, one Vue 3 island on `/keys` and D1 for storage.
+`bun run build` builds it from the root and `bun run dev` serves it with `astro dev`.
+Bindings come from `apps/worker/wrangler.jsonc` and are typed by `bunx wrangler types` into `worker-configuration.d.ts`, which is generated and never hand-edited; the six plain secrets are typed by hand in `src/env.d.ts` and set locally through `apps/worker/.dev.vars`.
+The privacy page renders the four `PRIVACY_*` secrets, so every instance carries its own controller identity.
+`bunx wrangler d1 migrations apply DB --remote` applies the migrations from `apps/worker`, and `bunx wrangler deploy --dry-run` checks a build without touching Cloudflare.
+`GET /api/u/:login/summary?range=day|week|month` is the public contract: `login`, `range`, `from`, `to`, `timezone`, `totals`, `providers` and `days`, served with `Cache-Control: public, s-maxage=300`.
 
 ## Collector
 

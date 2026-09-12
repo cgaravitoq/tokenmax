@@ -1,0 +1,21 @@
+---
+export const prerender = false;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tokenmax</title>
+  </head>
+  <body>
+    <main>
+      <h1>tokenmax</h1>
+      <p>Public token-usage summaries for your GitHub login.</p>
+      <p><a href="/auth/github">Sign in with GitHub</a></p>
+      <p>Each sign-in issues a new API key and revokes every existing key of your login on every machine. After signing in again, reinstall the collector with the new key by running: <code>tokenmax install --url {Astro.url.origin} --key &lt;key&gt;</code>.</p>
+      <p><a href="/api/health">/api/health</a></p>
+      <footer><a href="/privacy">Privacy</a></footer>
+    </main>
+  </body>
+</html>
