@@ -1,0 +1,30 @@
+{
+  "name": "@tokenmax/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "astro build",
+    "check-types": "astro check",
+    "dev": "astro dev",
+    "preview": "astro preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "14.2.4",
+    "@astrojs/vue": "7.0.2",
+    "astro": "7.2.8",
+    "hono": "4.13.7",
+    "unstorage": "^1.17.5",
+    "vue": "3.5.42",
+    "zod": "4.6.1"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@types/node": "^24.13.3",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.127.1"
+  }
+}

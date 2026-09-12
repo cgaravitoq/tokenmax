@@ -1,0 +1,39 @@
+---
+import KeyReveal from "@/components/key-reveal.vue";
+
+export const prerender = false;
+
+const newKey = Astro.cookies.get("tokenmax_new_key")?.value ?? null;
+if (newKey !== null) {
+  Astro.cookies.delete("tokenmax_new_key", { path: "/keys" });
+}
+
+const installCommand = `bun run tokenmax:install -- --url ${Astro.url.origin} --key <key>`;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>API key</title>
+  </head>
+  <body>
+    {
+      newKey === null ? (
+        <main>
+          <p>No key to show. Signing in again issues a new key and revokes every existing key of your login on every machine; reinstall the collector from the portfolio repository root with the new key by running: <code>{installCommand}</code>.</p>
+          <p>
+            <a href="/auth/github">Sign in with GitHub</a>
+          </p>
+          <footer><a href="/privacy">Privacy</a></footer>
+        </main>
+      ) : (
+        <main>
+          <KeyReveal apiKey={newKey} client:load />
+          <p>Signing in again issues a new key and revokes every existing key of your login on every machine; reinstall the collector from the portfolio repository root with the new key by running: <code>{installCommand}</code>.</p>
+          <footer><a href="/privacy">Privacy</a></footer>
+        </main>
+      )
+    }
+  </body>
+</html>

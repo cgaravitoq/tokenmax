@@ -1,0 +1,74 @@
+---
+export const prerender = false;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy</title>
+  </head>
+  <body>
+    <main>
+      <h1>Privacy notice</h1>
+      <h2>Controller</h2>
+      <p>
+        Example Operator.
+        Email <a href="mailto:privacy@example.com">privacy@example.com</a>.
+      </p>
+      <h2>What is stored</h2>
+      <p>
+        When you sign in with GitHub the service stores your GitHub login and
+        avatar URL from the OAuth profile, and your API key as a hash. The
+        service never stores the plaintext key: it travels once to /keys in the
+        60-second <code>tokenmax_new_key</code> cookie, which the page deletes
+        when it shows the key.
+      </p>
+      <p>
+        The collector sends your machine identifiers and daily token-usage rows
+        with your API key, and those rows are stored under your login.
+      </p>
+      <h2>Cookies</h2>
+      <p>
+        <code>tokenmax_oauth_state</code> carries the OAuth state during sign-in.
+        It is scoped to /auth and expires after 10 minutes.
+      </p>
+      <p>
+        <code>tokenmax_new_key</code> carries the freshly issued key to the
+        /keys page once. It is scoped to /keys and expires after 60 seconds.
+      </p>
+      <p>
+        Both are strictly necessary session cookies, HttpOnly and Secure. The
+        service sets no analytics and no third-party cookies.
+      </p>
+      <h2>Public data</h2>
+      <p>
+        Usage summaries are public per login at /api/u/:login/summary. Signing
+        in makes your login's summary readable by anyone with the URL.
+      </p>
+      <h2>Keys</h2>
+      <p>
+        Each sign-in revokes every existing key of your login on every machine
+        and issues a new one.
+      </p>
+      <h2>Deletion and questions</h2>
+      <p>
+        Email <a href="mailto:privacy@example.com">privacy@example.com</a> to
+        delete your account, your keys and your usage rows, or to ask anything
+        about this data.
+      </p>
+      <h2>Your rights</h2>
+      <p>
+        You can complain to your data protection authority, Example DPA, at
+        <a href="https://dpa.example">https://dpa.example</a>.
+      </p>
+      <h2>Hosting</h2>
+      <p>
+        The service runs on Cloudflare Workers and D1. Cloudflare delivers the
+        requests and may process request data such as your IP address and
+        headers as a processor.
+      </p>
+      <footer><a href="/">Home</a></footer>
+    </main>
+  </body>
+</html>
