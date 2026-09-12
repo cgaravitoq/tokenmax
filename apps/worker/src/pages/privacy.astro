@@ -1,4 +1,6 @@
 ---
+import { env } from "cloudflare:workers";
+
 export const prerender = false;
 ---
 
@@ -13,8 +15,8 @@ export const prerender = false;
       <h1>Privacy notice</h1>
       <h2>Controller</h2>
       <p>
-        Example Operator.
-        Email <a href="mailto:privacy@example.com">privacy@example.com</a>.
+        {env.PRIVACY_CONTROLLER}.
+        Email <a href={`mailto:${env.PRIVACY_EMAIL}`}>{env.PRIVACY_EMAIL}</a>.
       </p>
       <h2>What is stored</h2>
       <p>
@@ -53,14 +55,15 @@ export const prerender = false;
       </p>
       <h2>Deletion and questions</h2>
       <p>
-        Email <a href="mailto:privacy@example.com">privacy@example.com</a> to
+        Email <a href={`mailto:${env.PRIVACY_EMAIL}`}>{env.PRIVACY_EMAIL}</a> to
         delete your account, your keys and your usage rows, or to ask anything
         about this data.
       </p>
       <h2>Your rights</h2>
       <p>
-        You can complain to your data protection authority, Example DPA, at
-        <a href="https://dpa.example">https://dpa.example</a>.
+        You can complain to your data protection authority,
+        {env.PRIVACY_AUTHORITY_NAME}, at
+        <a href={env.PRIVACY_AUTHORITY_URL}>{env.PRIVACY_AUTHORITY_URL}</a>.
       </p>
       <h2>Hosting</h2>
       <p>
