@@ -1,0 +1,11 @@
+node_modules
+dist
+coverage
+.cache
+.btca
+.DS_Store
+.env
+.env.*
+*.pem
+.claude/settings.local.json
+.claude/worktrees/
