@@ -23,8 +23,9 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --exclude src/package.e2e.spec.ts",
+    "test:package": "vitest run src/package.e2e.spec.ts",
+    "test:watch": "vitest --exclude src/package.e2e.spec.ts"
   },
   "dependencies": {
     "ccusage": "20.0.20",
