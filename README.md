@@ -14,14 +14,14 @@ A Cloudflare account, Bun 1.3.14 and `bunx wrangler login`.
 
 ### Deploy
 
-1. `git clone` the repository and run `bun install` from the root.
-2. From `apps/worker`, run `bunx wrangler d1 create tokenmax`, then paste the returned `database_id` into `d1_databases[0]` in `apps/worker/wrangler.jsonc`.
+1. Run `git clone https://github.com/cgaravitoq/tokenmax.git`, change into the checkout with `cd tokenmax`, then run `bun install`.
+2. From `apps/worker`, run `bunx wrangler d1 create tokenmax`, then replace `d1_databases[0].database_id` in `apps/worker/wrangler.jsonc` with the returned id.
 3. Create a GitHub OAuth app whose callback URL is `https://<worker>.workers.dev/auth/github/callback`.
 4. Set the six secrets with `bunx wrangler secret put`: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `PRIVACY_CONTROLLER`, `PRIVACY_EMAIL`, `PRIVACY_AUTHORITY_NAME` and `PRIVACY_AUTHORITY_URL`.
 5. From `apps/worker`, run `bunx wrangler d1 migrations apply DB --remote`.
 6. Run `bun run build` from the root, then deploy by pushing to `main` with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets, or with `bunx wrangler deploy` from `apps/worker`.
 7. Sign in at `/auth/github` and copy the key shown once at `/keys`.
-8. Install the collector with `bun add -g tokenmax-collector` (once published) and schedule it with `tokenmax install --url <url> --key <key>`.
+8. Install the collector with `bun add -g tokenmax-collector` (once published), run `tokenmax install --url <url> --key <key>`, then run the command printed after `load:` to activate collection on macOS or Linux.
 
 ### Local development
 
