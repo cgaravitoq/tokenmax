@@ -8,7 +8,7 @@ if (newKey !== null) {
   Astro.cookies.delete("tokenmax_new_key", { path: "/keys" });
 }
 
-const installCommand = `bun run tokenmax:install -- --url ${Astro.url.origin} --key <key>`;
+const installCommand = `tokenmax install --url ${Astro.url.origin} --key <key>`;
 ---
 
 <html lang="en">
@@ -21,7 +21,7 @@ const installCommand = `bun run tokenmax:install -- --url ${Astro.url.origin} --
     {
       newKey === null ? (
         <main>
-          <p>No key to show. Signing in again issues a new key and revokes every existing key of your login on every machine; reinstall the collector from the portfolio repository root with the new key by running: <code>{installCommand}</code>.</p>
+          <p>No key to show. Signing in again issues a new key and revokes every existing key of your login on every machine; reinstall the collector with the new key by running: <code>{installCommand}</code>.</p>
           <p>
             <a href="/auth/github">Sign in with GitHub</a>
           </p>
@@ -30,7 +30,7 @@ const installCommand = `bun run tokenmax:install -- --url ${Astro.url.origin} --
       ) : (
         <main>
           <KeyReveal apiKey={newKey} client:load />
-          <p>Signing in again issues a new key and revokes every existing key of your login on every machine; reinstall the collector from the portfolio repository root with the new key by running: <code>{installCommand}</code>.</p>
+          <p>Signing in again issues a new key and revokes every existing key of your login on every machine; reinstall the collector with the new key by running: <code>{installCommand}</code>.</p>
           <footer><a href="/privacy">Privacy</a></footer>
         </main>
       )

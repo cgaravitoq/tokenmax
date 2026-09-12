@@ -13,7 +13,7 @@ export const prerender = false;
       <h1>tokenmax</h1>
       <p>Public token-usage summaries for your GitHub login.</p>
       <p><a href="/auth/github">Sign in with GitHub</a></p>
-      <p>Each sign-in issues a new API key and revokes every existing key of your login on every machine. After signing in again, reinstall the collector from the portfolio repository root with the new key by running: <code>bun run tokenmax:install -- --url {Astro.url.origin} --key &lt;key&gt;</code>.</p>
+      <p>Each sign-in issues a new API key and revokes every existing key of your login on every machine. After signing in again, reinstall the collector with the new key by running: <code>tokenmax install --url {Astro.url.origin} --key &lt;key&gt;</code>.</p>
       <p><a href="/api/health">/api/health</a></p>
       <footer><a href="/privacy">Privacy</a></footer>
     </main>

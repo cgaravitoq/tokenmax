@@ -18,10 +18,10 @@ describe("GET /", () => {
     expect(html).toContain('href="/privacy"');
     expect(html).toContain("revokes every existing key");
     expect(html).toContain(
-      "reinstall the collector from the portfolio repository root with the new key by running:",
+      "reinstall the collector with the new key by running:",
     );
     expect(html).toContain(
-      "bun run tokenmax:install -- --url http://tokenmax.test --key &lt;key&gt;</code>",
+      "tokenmax install --url http://tokenmax.test --key &lt;key&gt;</code>",
     );
   });
 });

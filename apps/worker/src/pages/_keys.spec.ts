@@ -44,10 +44,10 @@ describe("GET /keys", () => {
     expect(html).toContain('href="/privacy"');
     expect(html).toContain("revokes every existing key");
     expect(html).toContain(
-      "reinstall the collector from the portfolio repository root with the new key by running:",
+      "reinstall the collector with the new key by running:",
     );
     expect(html).toContain(
-      "bun run tokenmax:install -- --url http://tokenmax.test --key &lt;key&gt;</code>",
+      "tokenmax install --url http://tokenmax.test --key &lt;key&gt;</code>",
     );
     expect(cookies).toHaveLength(1);
     const attributes = cookies[0]?.split("; ") ?? [];
@@ -60,16 +60,16 @@ describe("GET /keys", () => {
     const { html, cookies } = await render();
 
     expect(html).toContain(
-      "No key to show. Signing in again issues a new key and revokes every existing key of your login on every machine; reinstall the collector from the portfolio repository root with the new key by running:",
+      "No key to show. Signing in again issues a new key and revokes every existing key of your login on every machine; reinstall the collector with the new key by running:",
     );
     expect(html).toContain('<a href="/auth/github">Sign in with GitHub</a>');
     expect(html).toContain('href="/privacy"');
     expect(html).toContain("revokes every existing key");
     expect(html).toContain(
-      "reinstall the collector from the portfolio repository root with the new key by running:",
+      "reinstall the collector with the new key by running:",
     );
     expect(html).toContain(
-      "bun run tokenmax:install -- --url http://tokenmax.test --key &lt;key&gt;</code>",
+      "tokenmax install --url http://tokenmax.test --key &lt;key&gt;</code>",
     );
     expect(html).not.toContain("tmx_");
     expect(html).not.toContain("astro-island");
