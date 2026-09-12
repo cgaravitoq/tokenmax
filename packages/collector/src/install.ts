@@ -81,8 +81,17 @@ export async function install(options: InstallOptions): Promise<InstallPlan> {
     timezone,
     url: options.url,
   });
+  const cliPath = options.cliPath ?? resolveCliPath();
+  if (
+    options.dryRun !== true &&
+    (cliPath.includes("/install/cache/") || /\/bunx-\d+-[^/]+\//.test(cliPath))
+  ) {
+    throw new Error(
+      "refusing to schedule from a bunx path; install globally: bun add -g tokenmax-collector, then run: tokenmax install --url <url> --key <key>",
+    );
+  }
   const files = scheduleFiles(platform, paths, {
-    cliPath: options.cliPath ?? resolveCliPath(),
+    cliPath,
     execPath: options.execPath ?? process.execPath,
     stderrLog: paths.stderrLog,
     stdoutLog: paths.stdoutLog,

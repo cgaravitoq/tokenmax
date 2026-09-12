@@ -61,6 +61,9 @@ jobs:
       - name: Test dependency policy
         run: bun run test:dependency-policy
 
+      - name: Test packed package
+        run: bun run test:package
+
       - name: Audit production dependencies
         run: bun run audit:production
 

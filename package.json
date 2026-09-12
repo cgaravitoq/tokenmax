@@ -26,6 +26,7 @@
     "prepare": "husky",
     "test": "bun --filter '*' test",
     "test:dependency-policy": "bun test scripts/dependabot-config.test.ts",
+    "test:package": "bun --filter tokenmax-collector test:package",
     "test:watch": "bun --filter '*' test:watch"
   },
   "workspaces": [
