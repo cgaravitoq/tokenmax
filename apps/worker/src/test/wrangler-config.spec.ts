@@ -2,57 +2,46 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-interface D1DatabaseConfig {
-  binding: string;
-  database_name: string;
-  database_id: string;
-  migrations_dir: string;
-}
-
-interface WranglerConfig {
-  name: string;
-  d1_databases: D1DatabaseConfig[];
-}
-
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-const config: WranglerConfig = JSON.parse(
+const config: unknown = JSON.parse(
   readFileSync(
     fileURLToPath(new URL("../../wrangler.jsonc", import.meta.url)),
     "utf8",
   ),
 );
 
-const validConfig: WranglerConfig = {
-  name: "tokenmax",
-  d1_databases: [
-    {
-      binding: "DB",
-      database_name: "tokenmax",
-      database_id: "11111111-2222-3333-4444-555555555555",
-      migrations_dir: "./migrations",
-    },
-  ],
+const validDatabase = {
+  binding: "DB",
+  database_name: "tokenmax",
+  database_id: "11111111-2222-3333-4444-555555555555",
+  migrations_dir: "./migrations",
 };
 
-function bindsTokenmaxDatabase(value: WranglerConfig): boolean {
-  if (value.name.length === 0) return false;
+const validConfig = { name: "tokenmax", d1_databases: [validDatabase] };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function bindsTokenmaxDatabase(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (typeof value.name !== "string" || value.name.length === 0) return false;
+  if (!Array.isArray(value.d1_databases)) return false;
   if (value.d1_databases.length !== 1) return false;
-  const database = value.d1_databases[0];
+  const database: unknown = value.d1_databases[0];
+  if (!isRecord(database)) return false;
   return (
     database.binding === "DB" &&
+    typeof database.database_name === "string" &&
     database.database_name.length > 0 &&
+    typeof database.database_id === "string" &&
     uuid.test(database.database_id) &&
     database.migrations_dir === "./migrations"
   );
 }
 
 describe("wrangler configuration", () => {
-  it("names the worker and binds exactly one D1 database", () => {
-    expect(config.name.length).toBeGreaterThan(0);
-    expect(config.d1_databases).toHaveLength(1);
-  });
-
   it("binds the D1 database as DB with a migrations directory and a UUID id", () => {
     expect(bindsTokenmaxDatabase(config)).toBe(true);
   });
@@ -63,7 +52,7 @@ describe("wrangler configuration", () => {
         name: "tokenmax-staging",
         d1_databases: [
           {
-            ...validConfig.d1_databases[0],
+            ...validDatabase,
             database_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
           },
         ],
@@ -78,26 +67,44 @@ describe("wrangler configuration", () => {
     expect(
       bindsTokenmaxDatabase({
         name: "tokenmax",
-        d1_databases: [
-          validConfig.d1_databases[0],
-          validConfig.d1_databases[0],
-        ],
+        d1_databases: [validDatabase, validDatabase],
       }),
     ).toBe(false);
   });
 
   it("rejects a wrong binding, name, id and migrations directory", () => {
-    const database = validConfig.d1_databases[0];
     for (const wrong of [
-      { ...database, binding: "OTHER" },
-      { ...database, database_name: "" },
-      { ...database, database_id: "not-a-uuid" },
-      { ...database, migrations_dir: "./migration" },
+      { ...validDatabase, binding: "OTHER" },
+      { ...validDatabase, database_name: "" },
+      { ...validDatabase, database_id: "not-a-uuid" },
+      { ...validDatabase, migrations_dir: "./migration" },
     ]) {
       expect(
         bindsTokenmaxDatabase({ ...validConfig, d1_databases: [wrong] }),
       ).toBe(false);
     }
     expect(bindsTokenmaxDatabase({ ...validConfig, name: "" })).toBe(false);
+  });
+
+  it("rejects non-string fields", () => {
+    for (const wrong of [
+      { ...validDatabase, binding: ["DB"] },
+      { ...validDatabase, database_name: ["tokenmax"] },
+      { ...validDatabase, database_id: [validDatabase.database_id] },
+      { ...validDatabase, migrations_dir: ["./migrations"] },
+      null,
+      "DB",
+    ]) {
+      expect(
+        bindsTokenmaxDatabase({ ...validConfig, d1_databases: [wrong] }),
+      ).toBe(false);
+    }
+    expect(bindsTokenmaxDatabase({ ...validConfig, name: ["tokenmax"] })).toBe(
+      false,
+    );
+    expect(bindsTokenmaxDatabase({ ...validConfig, d1_databases: {} })).toBe(
+      false,
+    );
+    expect(bindsTokenmaxDatabase(null)).toBe(false);
   });
 });
