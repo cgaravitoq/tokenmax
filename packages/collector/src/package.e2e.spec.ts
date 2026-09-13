@@ -3,6 +3,7 @@ import { once } from "node:events";
 import {
   mkdir,
   mkdtemp,
+  readFile,
   realpath,
   rename,
   rm,
@@ -19,6 +20,9 @@ import { canonicalTimezone } from "./config";
 
 const execFileAsync = promisify(execFile);
 const packageDirectory = new URL("..", import.meta.url).pathname;
+const { version } = JSON.parse(
+  await readFile(new URL("../package.json", import.meta.url), "utf8"),
+) as { version: string };
 const runningChildren = new Set<ChildProcess>();
 const temporaryDirectories: string[] = [];
 
@@ -169,7 +173,7 @@ it("installs and runs the packed package", async () => {
   }
   const globalModules = join(bunInstall, "install", "global", "node_modules");
   const tokenmax = join(bunInstall, "bin", "tokenmax");
-  const tarball = join(temporaryDirectory, "tokenmax-collector-0.1.0.tgz");
+  const tarball = join(temporaryDirectory, `tokenmax-collector-${version}.tgz`);
   let server: Server | undefined;
   let nativeBinary = "";
   let disabledNativeBinary = "";
@@ -182,7 +186,7 @@ it("installs and runs the packed package", async () => {
       env,
     );
     const packListing = `${packed.stdout}\n${packed.stderr}`;
-    expect(packListing).toContain("tokenmax-collector-0.1.0.tgz");
+    expect(packListing).toContain(`tokenmax-collector-${version}.tgz`);
     expect(packListing).toContain("LICENSE");
     expect(packListing).toContain("src/cli.ts");
     expect(packListing).toContain("src/install.ts");
