@@ -25,7 +25,7 @@
     "lint:slop": "oxlint -c oxlint.config.mts --deny-warnings",
     "prepare": "husky",
     "test": "bun --filter '*' test",
-    "test:dependency-policy": "bun test scripts/dependabot-config.test.ts scripts/ci-deploy-jobs.test.ts",
+    "test:dependency-policy": "bun test scripts/dependabot-config.test.ts scripts/ci-deploy-jobs.test.ts scripts/release-workflow.test.ts",
     "test:package": "bun --filter tokenmax-collector test:package",
     "test:watch": "bun --filter '*' test:watch"
   },
