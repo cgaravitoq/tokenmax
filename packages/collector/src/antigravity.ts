@@ -11,6 +11,11 @@ export interface AntigravityStep {
   output: number;
 }
 
+export interface AntigravityUsage {
+  failures: string[];
+  steps: AntigravityStep[];
+}
+
 interface ProtoField {
   number: number;
   value: bigint | Uint8Array;
@@ -43,10 +48,16 @@ export function antigravityConversationsDir(home: string): string {
 function decodeMessage(bytes: Uint8Array): ProtoField[] {
   const fields: ProtoField[] = [];
   let offset = 0;
+  const truncated = (): never => {
+    throw new Error("truncated protobuf message");
+  };
   const varint = (): bigint => {
     let result = 0n;
     let shift = 0n;
     for (;;) {
+      if (offset >= bytes.length) {
+        truncated();
+      }
       const byte = bytes[offset++];
       result |= BigInt(byte & 0x7f) << shift;
       if (byte < 0x80) {
@@ -56,6 +67,9 @@ function decodeMessage(bytes: Uint8Array): ProtoField[] {
     }
   };
   const bytesOf = (length: number): Uint8Array => {
+    if (offset + length > bytes.length) {
+      truncated();
+    }
     const slice = bytes.subarray(offset, offset + length);
     offset += length;
     return slice;
@@ -108,7 +122,7 @@ function text(fields: ProtoField[], number: number): string | null {
 function openReadOnly(file: string): DatabaseSync {
   const location = existsSync(`${file}-wal`)
     ? file
-    : `file:${file}?immutable=1`;
+    : `file:${file.split("/").map(encodeURIComponent).join("/")}?immutable=1`;
   return new DatabaseSync(location, { readOnly: true });
 }
 
@@ -159,23 +173,35 @@ function readConversation(
 
 export async function readAntigravitySteps(
   dir: string,
-): Promise<AntigravityStep[]> {
+): Promise<AntigravityUsage> {
   let files: string[];
   try {
     files = await readdir(dir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return [];
+      return { failures: [], steps: [] };
     }
     throw error;
   }
   const names = new Map<number, string>();
   const steps: RawStep[] = [];
+  const failures: string[] = [];
   for (const file of files.filter((name) => name.endsWith(".db")).sort()) {
-    readConversation(resolve(dir, file), names, steps);
+    const conversation = resolve(dir, file);
+    const before = steps.length;
+    try {
+      readConversation(conversation, names, steps);
+    } catch (error) {
+      steps.length = before;
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push(`${conversation}: ${message}`);
+    }
   }
-  return steps.map(({ modelCode, ...step }) => ({
-    ...step,
-    model: names.get(modelCode) ?? unknownModel,
-  }));
+  return {
+    failures,
+    steps: steps.map(({ modelCode, ...step }) => ({
+      ...step,
+      model: names.get(modelCode) ?? unknownModel,
+    })),
+  };
 }

@@ -73,7 +73,7 @@ const generationMetadata = (modelCode: number, name: string): Uint8Array =>
     [4, "conversation"],
   ]);
 
-const schema = `
+export const schema = `
 CREATE TABLE trajectory_meta (trajectory_id text PRIMARY KEY);
 CREATE TABLE steps (
   idx integer, step_type integer NOT NULL DEFAULT 0, status integer NOT NULL DEFAULT 0,

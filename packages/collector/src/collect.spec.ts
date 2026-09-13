@@ -174,6 +174,7 @@ describe("collect", () => {
       accepted: 3,
       kind: "reported",
       machine: "test-host-abc-123",
+      warnings: [],
     });
     expect(calls).toHaveLength(1);
     expect(calls[0].command).toBe(process.execPath);
@@ -308,6 +309,7 @@ describe("collect", () => {
       accepted: 4,
       kind: "reported",
       machine: "test-host-abc-123",
+      warnings: [],
     });
     expect(priceCalls).toEqual([litellmPricesUrl]);
     expect(await readFile(paths.pricesFile, "utf8")).toBe(litellmPrices);
@@ -362,7 +364,7 @@ describe("collect", () => {
     );
   });
 
-  it("fails when the prices cannot be loaded for Antigravity steps", async () => {
+  it("still reports the ccusage days when the prices cannot be loaded", async () => {
     await writeConfig(paths.configFile, { key, url: "http://localhost:8797" });
     const conversations = antigravityConversationsDir(home);
     await mkdir(conversations, { recursive: true });
@@ -376,14 +378,16 @@ describe("collect", () => {
         },
       ],
     });
+    const requests: Request[] = [];
+    const report = reportFetcher(requests, 200, '{"accepted":3}');
 
     const result = await collect({
       env: { home },
-      fetcher: async (url) => {
+      fetcher: async (url, init) => {
         if (url === litellmPricesUrl) {
           throw new Error("offline");
         }
-        throw new Error("collect must not report without prices");
+        return report(url, init);
       },
       identity,
       runner: dailyRunner(sample, []),
@@ -391,9 +395,54 @@ describe("collect", () => {
     });
 
     expect(result).toEqual({
-      kind: "failed",
-      message: "could not load model prices: offline",
+      accepted: 3,
+      kind: "reported",
+      machine: "test-host-abc-123",
+      warnings: ["antigravity: could not load model prices: offline"],
     });
+    expect(JSON.parse(String(requests[0].init.body)).days).toEqual(
+      expectedDays,
+    );
+  });
+
+  it("reports around a conversation it cannot read and names it", async () => {
+    await writeConfig(paths.configFile, { key, url: "http://localhost:8797" });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    await writeFile(join(conversations, "broken.db"), "not a database");
+    writeConversation(join(conversations, "ok.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-10T12:00:00.000Z"),
+          input: 10,
+          modelCode: 1318,
+          output: 10,
+        },
+      ],
+    });
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":4}'),
+        [],
+      ),
+      identity,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      accepted: 4,
+      kind: "reported",
+      machine: "test-host-abc-123",
+      warnings: [
+        `antigravity: skipped ${join(conversations, "broken.db")}: file is not a database`,
+      ],
+    });
+    expect(JSON.parse(String(requests[0].init.body)).days).toHaveLength(4);
   });
 
   it("fails with the status and the body when the key is rejected", async () => {
@@ -423,7 +472,7 @@ describe("collect", () => {
       today: new Date("2026-09-10T12:00:00.000Z"),
     });
 
-    expect(result).toEqual({ kind: "empty" });
+    expect(result).toEqual({ kind: "empty", warnings: [] });
   });
 
   it("fails with the ccusage error when the command exits", async () => {

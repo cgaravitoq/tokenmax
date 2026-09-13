@@ -2,12 +2,13 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   antigravityConversationsDir,
   readAntigravitySteps,
 } from "./antigravity";
-import { writeConversation } from "./test/antigravity-fixture";
+import { schema, writeConversation } from "./test/antigravity-fixture";
 
 let dir: string;
 
@@ -29,7 +30,10 @@ describe("antigravityConversationsDir", () => {
 
 describe("readAntigravitySteps", () => {
   it("returns no steps when Antigravity was never installed", async () => {
-    expect(await readAntigravitySteps(join(dir, "missing"))).toEqual([]);
+    expect(await readAntigravitySteps(join(dir, "missing"))).toEqual({
+      failures: [],
+      steps: [],
+    });
   });
 
   it("reads the usage of every model step across conversations", async () => {
@@ -53,7 +57,7 @@ describe("readAntigravitySteps", () => {
       ],
     });
 
-    expect(await readAntigravitySteps(dir)).toEqual([
+    expect((await readAntigravitySteps(dir)).steps).toEqual([
       {
         at: first,
         cacheRead: 0,
@@ -85,7 +89,7 @@ describe("readAntigravitySteps", () => {
     });
     expect(existsSync(`${file}-wal`)).toBe(false);
 
-    expect(await readAntigravitySteps(dir)).toHaveLength(1);
+    expect((await readAntigravitySteps(dir)).steps).toHaveLength(1);
     expect(existsSync(`${file}-wal`)).toBe(false);
   });
 
@@ -98,10 +102,41 @@ describe("readAntigravitySteps", () => {
     );
     try {
       expect(existsSync(`${file}-wal`)).toBe(true);
-      expect(await readAntigravitySteps(dir)).toHaveLength(1);
+      expect((await readAntigravitySteps(dir)).steps).toHaveLength(1);
     } finally {
       writer.close();
     }
+  });
+
+  it("skips a conversation it cannot decode and keeps the others", async () => {
+    writeConversation(join(dir, "a.db"), {
+      steps: [{ at: new Date(0), input: 1, modelCode: 1, output: 1 }],
+    });
+    await writeFile(join(dir, "b.db"), "not a database");
+    const truncated = new DatabaseSync(join(dir, "c.db"));
+    truncated.exec(schema);
+    truncated
+      .prepare("INSERT INTO steps (idx, step_type, metadata) VALUES (0, 15, ?)")
+      .run(Uint8Array.from([0x4a, 0x80]));
+    truncated.close();
+
+    const usage = await readAntigravitySteps(dir);
+
+    expect(usage.steps).toHaveLength(1);
+    expect(usage.failures).toEqual([
+      `${join(dir, "b.db")}: file is not a database`,
+      `${join(dir, "c.db")}: truncated protobuf message`,
+    ]);
+  });
+
+  it("opens a conversation whose name needs URI escaping", async () => {
+    writeConversation(join(dir, "odd name #1?.db"), {
+      steps: [{ at: new Date(0), input: 1, modelCode: 1, output: 1 }],
+    });
+
+    const usage = await readAntigravitySteps(dir);
+
+    expect(usage.steps).toHaveLength(1);
   });
 
   it("ignores files that are not conversations", async () => {
@@ -110,6 +145,6 @@ describe("readAntigravitySteps", () => {
     });
     await writeFile(join(dir, "notes.txt"), "not a database");
 
-    expect(await readAntigravitySteps(dir)).toHaveLength(1);
+    expect((await readAntigravitySteps(dir)).steps).toHaveLength(1);
   });
 });
