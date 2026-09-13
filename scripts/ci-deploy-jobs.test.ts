@@ -145,7 +145,7 @@ function expectedDeployJob(
     steps: [
       { uses: actions.checkout, with: { ref: "${{ github.sha }}" } },
       { uses: actions.setupNode, with: { "node-version": "24.19.0" } },
-      { uses: actions.setupBun, with: { "bun-version": "1.3.14" } },
+      { uses: actions.setupBun, with: { "bun-version": "1.4.0" } },
       { name: "Install dependencies", run: "bun install --frozen-lockfile" },
       { name: app.buildStepName, run: app.buildRun },
       {

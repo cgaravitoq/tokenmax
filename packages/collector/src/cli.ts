@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
-import { collect, type Fetcher } from "./collect";
+import { collect } from "./collect";
 import type { CommandRunner } from "./command";
+import type { Fetcher } from "./http";
 import { install } from "./install";
 import { type MachineIdentity, readMachineIdentity } from "./machine";
 import { type CollectorEnv, processEnv } from "./paths";
@@ -35,12 +36,15 @@ async function runCollect(io: CliIo): Promise<number> {
     runner: io.runner,
     today: io.today,
   });
-  if (result.kind === "reported") {
-    io.stdout(`accepted ${result.accepted} days for ${result.machine}`);
-    return 0;
-  }
-  if (result.kind === "empty") {
-    io.stdout("nothing to report");
+  if (result.kind === "reported" || result.kind === "empty") {
+    for (const warning of result.warnings) {
+      io.stderr(warning);
+    }
+    io.stdout(
+      result.kind === "reported"
+        ? `accepted ${result.accepted} days for ${result.machine}`
+        : "nothing to report",
+    );
     return 0;
   }
   if (result.kind === "missing-config") {

@@ -37,16 +37,25 @@ export function ccusageCliPath(): string {
   return createRequire(import.meta.url).resolve("ccusage/src/cli.js");
 }
 
-export function sinceArgument(today: Date, timezone: string): string {
-  const calendarDate = new Intl.DateTimeFormat("en-CA", {
+export function calendarDate(at: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(today);
-  const [year, month, day] = calendarDate.split("-").map(Number);
+  }).format(at);
+}
+
+export function windowStart(today: Date, timezone: string): string {
+  const [year, month, day] = calendarDate(today, timezone)
+    .split("-")
+    .map(Number);
   const start = new Date(Date.UTC(year, month - 1, day - (windowDays - 1)));
-  return start.toISOString().slice(0, 10).replaceAll("-", "");
+  return start.toISOString().slice(0, 10);
+}
+
+export function sinceArgument(today: Date, timezone: string): string {
+  return windowStart(today, timezone).replaceAll("-", "");
 }
 
 export function ccusageArguments(since: string, timezone: string): string[] {

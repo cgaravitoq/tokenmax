@@ -1,17 +1,21 @@
-import { readCcusageDaily, sinceArgument } from "./ccusage";
+import {
+  antigravityConversationsDir,
+  readAntigravitySteps,
+} from "./antigravity";
+import {
+  calendarDate,
+  readCcusageDaily,
+  sinceArgument,
+  windowStart,
+} from "./ccusage";
 import { type CommandRunner, runCommand } from "./command";
 import { readConfig, runtimeTimezone } from "./config";
+import type { Fetcher } from "./http";
 import { type MachineIdentity, machineId } from "./machine";
-import { mapCcusageDays } from "./mapping";
+import { mapAntigravitySteps, mapCcusageDays } from "./mapping";
 import { type CollectorEnv, collectorPaths, processEnv } from "./paths";
+import { loadPrices } from "./pricing";
 import type { UsageDay, UsageReport } from "./usage";
-
-export interface HttpResponse {
-  status: number;
-  text(): Promise<string>;
-}
-
-export type Fetcher = (url: string, init: RequestInit) => Promise<HttpResponse>;
 
 export interface CollectOptions {
   identity: MachineIdentity;
@@ -23,8 +27,8 @@ export interface CollectOptions {
 }
 
 export type CollectResult =
-  | { kind: "reported"; accepted: number; machine: string }
-  | { kind: "empty" }
+  | { kind: "reported"; accepted: number; machine: string; warnings: string[] }
+  | { kind: "empty"; warnings: string[] }
   | { kind: "missing-config"; configFile: string }
   | { kind: "failed"; message: string };
 
@@ -52,11 +56,17 @@ function acceptedCount(body: string): number | null {
   return typeof accepted === "number" ? accepted : null;
 }
 
+interface AntigravityRows {
+  days: UsageDay[];
+  warnings: string[];
+}
+
 async function report(
   fetcher: Fetcher,
   url: string,
   key: string,
   usage: UsageReport,
+  warnings: string[],
 ): Promise<CollectResult> {
   const response = await fetcher(reportUrl(url), {
     body: JSON.stringify(usage),
@@ -80,11 +90,34 @@ async function report(
       message: `tokenmax responded an unexpected body: ${body}`,
     };
   }
-  return { accepted, kind: "reported", machine: usage.machine };
+  return { accepted, kind: "reported", machine: usage.machine, warnings };
+}
+
+async function antigravityDays(
+  home: string,
+  today: Date,
+  timezone: string,
+  fetcher: Fetcher,
+  pricesFile: string,
+): Promise<AntigravityRows> {
+  const since = windowStart(today, timezone);
+  const usage = await readAntigravitySteps(antigravityConversationsDir(home));
+  const warnings = usage.failures.map(
+    (failure) => `antigravity: skipped ${failure}`,
+  );
+  const steps = usage.steps.filter(
+    (step) => calendarDate(step.at, timezone) >= since,
+  );
+  if (steps.length === 0) {
+    return { days: [], warnings };
+  }
+  const prices = await loadPrices(fetcher, pricesFile, today);
+  return { days: mapAntigravitySteps(steps, timezone, prices), warnings };
 }
 
 export async function collect(options: CollectOptions): Promise<CollectResult> {
-  const paths = collectorPaths(options.env ?? processEnv());
+  const env = options.env ?? processEnv();
+  const paths = collectorPaths(env);
   const config = await readConfig(paths.configFile);
   if (config.kind === "missing") {
     return { configFile: paths.configFile, kind: "missing-config" };
@@ -100,28 +133,45 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
   const timezone =
     config.config.timezone ?? options.timezone ?? runtimeTimezone();
   const runner = options.runner ?? runCommand;
+  const fetcher = options.fetcher ?? fetch;
+  const today = options.today ?? new Date();
 
   let days: UsageDay[];
   try {
     const daily = await readCcusageDaily(
       runner,
-      sinceArgument(options.today ?? new Date(), timezone),
+      sinceArgument(today, timezone),
       timezone,
     );
     days = mapCcusageDays(daily);
   } catch (error) {
     return { kind: "failed", message: messageOf(error) };
   }
+
+  let antigravity: AntigravityRows;
+  try {
+    antigravity = await antigravityDays(
+      env.home,
+      today,
+      timezone,
+      fetcher,
+      paths.pricesFile,
+    );
+  } catch (error) {
+    antigravity = { days: [], warnings: [`antigravity: ${messageOf(error)}`] };
+  }
+  days.push(...antigravity.days);
   if (days.length === 0) {
-    return { kind: "empty" };
+    return { kind: "empty", warnings: antigravity.warnings };
   }
 
   try {
     return await report(
-      options.fetcher ?? fetch,
+      fetcher,
       config.config.url,
       config.config.key,
       { days, machine, timezone },
+      antigravity.warnings,
     );
   } catch (error) {
     return { kind: "failed", message: messageOf(error) };

@@ -10,7 +10,7 @@ The worker is `apps/worker`: an Astro 7 app on the Cloudflare adapter with a Hon
 
 ### Prerequisites
 
-A Cloudflare account, Bun 1.3.14 and `bunx wrangler login`.
+A Cloudflare account, Bun 1.4.0 and `bunx wrangler login`.
 
 ### Deploy
 
@@ -21,7 +21,7 @@ A Cloudflare account, Bun 1.3.14 and `bunx wrangler login`.
 5. From `apps/worker`, run `bunx wrangler d1 migrations apply DB --remote`.
 6. Run `bun run build` from the root, then deploy by pushing to `main` with the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets, or with `bunx wrangler deploy` from `apps/worker`.
 7. Sign in at `/auth/github` and copy the key shown once at `/keys`.
-8. Install the collector with `bun add -g tokenmax-collector` (once published), run `tokenmax install --url <url> --key <key>`, then run the command printed after `load:` to activate collection on macOS or Linux.
+8. Install the collector with `bun add -g tokenmax-collector`, run `tokenmax install --url <url> --key <key>`, then run the command printed after `load:` to activate collection on macOS or Linux.
 
 ### Local development
 
@@ -35,10 +35,10 @@ Providers and models rank by tokens descending then name, days ascend, and error
 
 ## Collector
 
-The collector requires Bun 1.3.14 or newer and supports macOS and Linux.
+The collector requires Bun 1.4.0 or newer, which ships `node:sqlite`, and supports macOS and Linux.
 Windows is unsupported.
 
-Once the package is published, install it globally and create the local schedule:
+Install it globally and create the local schedule:
 
 ```bash
 bun add -g tokenmax-collector
@@ -48,6 +48,9 @@ tokenmax install --url <url> --key <key>
 Pass `--timezone <zone>` to `install` to override the machine's IANA timezone.
 Non-dry `tokenmax install` refuses Bun paths containing `/install/cache/` or a `bunx-<digits>-<package>` directory segment because those paths can disappear while a schedule still points to them.
 Run `tokenmax collect` to report the last 14 calendar days immediately.
+The rows come from ccusage for every agent it detects, plus the Antigravity CLI conversations under `~/.gemini/antigravity-cli`, which the collector decodes itself and prices from the LiteLLM table it caches for a day at `~/.config/tokenmax/litellm-prices.json`.
+
+A collector release is a version bump merged to `main` followed by a `collector-v<version>` tag on that commit; the `release` workflow publishes the package to npm with provenance and creates the GitHub release.
 
 To upgrade, reinstall the latest package and regenerate the schedule with the existing key:
 
