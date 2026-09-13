@@ -50,6 +50,8 @@ Non-dry `tokenmax install` refuses Bun paths containing `/install/cache/` or a `
 Run `tokenmax collect` to report the last 14 calendar days immediately.
 The rows come from ccusage for every agent it detects, plus the Antigravity CLI conversations under `~/.gemini/antigravity-cli`, which the collector decodes itself and prices from the LiteLLM table it caches for a day at `~/.config/tokenmax/litellm-prices.json`.
 
+A collector release is a version bump merged to `main` followed by a `collector-v<version>` tag on that commit; the `release` workflow publishes the package to npm with provenance and creates the GitHub release.
+
 To upgrade, reinstall the latest package and regenerate the schedule with the existing key:
 
 ```bash

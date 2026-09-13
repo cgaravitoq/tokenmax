@@ -17,7 +17,7 @@ tokenmax/
 - Bun 1.3.14 workspaces (`apps/*` and `packages/*`), no Turbo.
 - TypeScript 6 in strict mode, with Node 24.19.0 declared in `engines.node`.
 - Biome 2.5 formats and lints, and oxlint 1.82 with the ultracite anti-slop preset is the second linter.
-- Vitest 4.1 runs the workspace specs, and `bun test` runs the dependency policy test.
+- Vitest 4.1 runs the workspace specs, and `bun test` runs the dependency policy and workflow golden tests under `scripts/`.
 - The collector spawns ccusage 20.0.20, pinned exact because it reads an undocumented JSON shape through a per-platform native binary.
 - The collector also decodes the Antigravity CLI conversations under `~/.gemini/antigravity-cli/conversations` itself, because ccusage has no adapter for them: each model step is a protobuf in SQLite, read through `node:sqlite`, priced from the LiteLLM table cached for a day at `~/.config/tokenmax/litellm-prices.json`, and reported as the `antigravity` provider.
 - The worker will be Astro 7 with the Cloudflare adapter, a Hono 4 API, a Vue 3 key page and D1.
@@ -47,7 +47,7 @@ bun run audit:production
 
 - `bun install --frozen-lockfile`, `bun run format`, `bun run lint:slop`, `bun run check-types`, `bun run test`, `bun run test:dependency-policy` and `bun run audit:production` must pass before a pull request merges.
 - The `ci` workflow runs these gates on its configured pull request, `main` push, merge queue and manual dispatch events, and also lints pull request titles.
-- On `main`, the `deploy` job ships the worker and the `publish` job publishes `tokenmax-collector` to npm when `packages/collector/package.json` carries a version that is not published yet, so a collector release is a version bump merged to `main`.
+- On `main`, the `deploy` job ships the worker on every push; the collector releases from a tag instead: merge a `chore(collector): release x.y.z` bump, then push `collector-vx.y.z` on that `main` commit and the `release` workflow checks the tag against `packages/collector/package.json`, reruns the gates, publishes to npm with provenance (skipping a version already there) and creates the GitHub release with generated notes.
 - `.husky/pre-commit` runs lint-staged and the workspace type check, and `.husky/commit-msg` runs commitlint.
 - A Dependabot patch merges itself only after `gh pr checks --watch --fail-fast` reports every check green, and a patch that touches ccusage always waits for a human.
 - Never bypass hooks, and never create Cloudflare resources from repository automation.
