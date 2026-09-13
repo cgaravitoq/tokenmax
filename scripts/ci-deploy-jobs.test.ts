@@ -11,7 +11,7 @@ const workflowTopLevelKeys = [
   "jobs",
 ];
 
-const workflowJobKeys = ["ci", "deploy"];
+const workflowJobKeys = ["ci", "deploy", "publish"];
 
 const expectedWorkflowPermissions = { contents: "read" };
 
@@ -34,6 +34,16 @@ const apiTokenExpression = "${{ secrets.CLOUDFLARE_API_TOKEN }}";
 const accountIdExpression = "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}";
 
 const pinnedActionPattern = /^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/;
+
+const npmRegistry = "https://registry.npmjs.org";
+
+const publishRun = `version="$(bun -p 'require("./package.json").version')"
+if npm view "tokenmax-collector@$version" version; then
+  echo "tokenmax-collector@$version is already published"
+  exit 0
+fi
+npm publish --access public
+`;
 
 interface DeployApp {
   jobKey: string;
@@ -163,6 +173,34 @@ function expectedDeployJob(
   };
 }
 
+function expectedPublishJob(actions: SetupActions): ExpectedDeployJob {
+  return {
+    name: "Publish collector",
+    if: expectedGate,
+    needs: "ci",
+    "runs-on": "ubuntu-latest",
+    concurrency: {
+      group: "publish",
+      "cancel-in-progress": false,
+    },
+    steps: [
+      { uses: actions.checkout, with: { ref: "${{ github.sha }}" } },
+      {
+        uses: actions.setupNode,
+        with: { "node-version": "24.19.0", "registry-url": npmRegistry },
+      },
+      { uses: actions.setupBun, with: { "bun-version": "1.3.14" } },
+      { name: "Install dependencies", run: "bun install --frozen-lockfile" },
+      {
+        name: "Publish collector",
+        "working-directory": "packages/collector",
+        run: publishRun,
+        env: { NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}" },
+      },
+    ],
+  };
+}
+
 function validateWorkflow(source: string): void {
   let workflow: UnknownRecord;
   try {
@@ -213,6 +251,15 @@ function validateWorkflow(source: string): void {
         `Job ${app.jobKey} must match the reviewed deploy job exactly: ${cause instanceof Error ? cause.message : String(cause)}`,
       );
     }
+  }
+  try {
+    expect(record(jobs.publish, "publish job")).toEqual(
+      expectedPublishJob(actions),
+    );
+  } catch (cause) {
+    throw new Error(
+      `Job publish must match the reviewed publish job exactly: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
   }
 }
 
@@ -443,7 +490,42 @@ describe("CI deploy jobs", () => {
     const mutated = `${workflowSource}\n  deploy-twice:\n    name: Deploy worker\n`;
     expect(mutated).not.toBe(workflowSource);
     expect(() => validateWorkflow(mutated)).toThrow(
-      "must declare exactly ci, deploy jobs",
+      "must declare exactly ci, deploy, publish jobs",
+    );
+  });
+
+  it("rejects publishing a version that is already on npm", () => {
+    const mutated = workflowSource.replace(
+      '            echo "tokenmax-collector@$version is already published"\n            exit 0\n',
+      '            echo "tokenmax-collector@$version is already published"\n',
+    );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "Job publish must match the reviewed publish job exactly",
+    );
+  });
+
+  it("rejects publishing from a branch other than main", () => {
+    const cut = workflowSource.indexOf("  publish:\n");
+    const mutated =
+      workflowSource.slice(0, cut) +
+      workflowSource
+        .slice(cut)
+        .replace("github.ref == 'refs/heads/main'", "github.ref != ''");
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "Job publish must match the reviewed publish job exactly",
+    );
+  });
+
+  it("rejects publishing with a token other than the npm secret", () => {
+    const mutated = workflowSource.replace(
+      "NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}",
+      "NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+    );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "Job publish must match the reviewed publish job exactly",
     );
   });
 });
