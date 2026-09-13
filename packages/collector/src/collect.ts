@@ -1,10 +1,20 @@
-import { readCcusageDaily, sinceArgument } from "./ccusage";
+import {
+  antigravityConversationsDir,
+  readAntigravitySteps,
+} from "./antigravity";
+import {
+  calendarDate,
+  readCcusageDaily,
+  sinceArgument,
+  windowStart,
+} from "./ccusage";
 import { type CommandRunner, runCommand } from "./command";
 import { readConfig, runtimeTimezone } from "./config";
 import type { Fetcher } from "./http";
 import { type MachineIdentity, machineId } from "./machine";
-import { mapCcusageDays } from "./mapping";
+import { mapAntigravitySteps, mapCcusageDays } from "./mapping";
 import { type CollectorEnv, collectorPaths, processEnv } from "./paths";
+import { loadPrices } from "./pricing";
 import type { UsageDay, UsageReport } from "./usage";
 
 export interface CollectOptions {
@@ -77,8 +87,27 @@ async function report(
   return { accepted, kind: "reported", machine: usage.machine };
 }
 
+async function antigravityDays(
+  home: string,
+  today: Date,
+  timezone: string,
+  fetcher: Fetcher,
+  pricesFile: string,
+): Promise<UsageDay[]> {
+  const since = windowStart(today, timezone);
+  const steps = (
+    await readAntigravitySteps(antigravityConversationsDir(home))
+  ).filter((step) => calendarDate(step.at, timezone) >= since);
+  if (steps.length === 0) {
+    return [];
+  }
+  const prices = await loadPrices(fetcher, pricesFile, today);
+  return mapAntigravitySteps(steps, timezone, prices);
+}
+
 export async function collect(options: CollectOptions): Promise<CollectResult> {
-  const paths = collectorPaths(options.env ?? processEnv());
+  const env = options.env ?? processEnv();
+  const paths = collectorPaths(env);
   const config = await readConfig(paths.configFile);
   if (config.kind === "missing") {
     return { configFile: paths.configFile, kind: "missing-config" };
@@ -94,15 +123,26 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
   const timezone =
     config.config.timezone ?? options.timezone ?? runtimeTimezone();
   const runner = options.runner ?? runCommand;
+  const fetcher = options.fetcher ?? fetch;
+  const today = options.today ?? new Date();
 
   let days: UsageDay[];
   try {
     const daily = await readCcusageDaily(
       runner,
-      sinceArgument(options.today ?? new Date(), timezone),
+      sinceArgument(today, timezone),
       timezone,
     );
-    days = mapCcusageDays(daily);
+    days = [
+      ...mapCcusageDays(daily),
+      ...(await antigravityDays(
+        env.home,
+        today,
+        timezone,
+        fetcher,
+        paths.pricesFile,
+      )),
+    ];
   } catch (error) {
     return { kind: "failed", message: messageOf(error) };
   }
@@ -111,12 +151,11 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
   }
 
   try {
-    return await report(
-      options.fetcher ?? fetch,
-      config.config.url,
-      config.config.key,
-      { days, machine, timezone },
-    );
+    return await report(fetcher, config.config.url, config.config.key, {
+      days,
+      machine,
+      timezone,
+    });
   } catch (error) {
     return { kind: "failed", message: messageOf(error) };
   }

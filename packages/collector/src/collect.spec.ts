@@ -1,14 +1,17 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { antigravityConversationsDir } from "./antigravity";
 import { sinceArgument } from "./ccusage";
 import { type CollectResult, collect } from "./collect";
 import type { CommandRunner } from "./command";
 import { writeConfig } from "./config";
 import type { Fetcher } from "./http";
 import { type CollectorPaths, collectorPaths } from "./paths";
+import { litellmPricesUrl } from "./pricing";
+import { writeConversation } from "./test/antigravity-fixture";
 import type { UsageDay } from "./usage";
 
 const isCalendarDate = (value: string): boolean => {
@@ -116,6 +119,24 @@ const reportFetcher = (
       );
     }
     return { status, text: async () => body };
+  };
+};
+
+const litellmPrices = JSON.stringify({
+  "gemini-3.8-flash": {
+    cache_read_input_token_cost: 7.5e-8,
+    input_cost_per_token: 7.5e-7,
+    output_cost_per_token: 3.75e-6,
+  },
+});
+
+const pricingFetcher = (report: Fetcher, calls: string[]): Fetcher => {
+  return async (url, init) => {
+    if (url !== litellmPricesUrl) {
+      return report(url, init);
+    }
+    calls.push(url);
+    return { status: 200, text: async () => litellmPrices };
   };
 };
 
@@ -240,6 +261,139 @@ describe("collect", () => {
     expect(JSON.parse(String(requests[0].init.body)).timezone).toBe(
       "Europe/Madrid",
     );
+  });
+
+  it("adds the Antigravity steps of the window as their own provider", async () => {
+    await writeConfig(paths.configFile, {
+      key,
+      timezone: "Europe/Madrid",
+      url: "http://localhost:8797",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        null,
+        {
+          at: new Date("2026-08-28T21:00:00.000Z"),
+          input: 999,
+          modelCode: 1318,
+          output: 999,
+        },
+        {
+          at: new Date("2026-09-09T22:30:00.000Z"),
+          cacheRead: 8144,
+          input: 9536,
+          modelCode: 1318,
+          output: 133,
+        },
+      ],
+    });
+    const requests: Request[] = [];
+    const priceCalls: string[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":4}'),
+        priceCalls,
+      ),
+      identity,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      accepted: 4,
+      kind: "reported",
+      machine: "test-host-abc-123",
+    });
+    expect(priceCalls).toEqual([litellmPricesUrl]);
+    expect(await readFile(paths.pricesFile, "utf8")).toBe(litellmPrices);
+    expect(JSON.parse(String(requests[0].init.body)).days).toEqual([
+      ...expectedDays,
+      {
+        cache_create: 0,
+        cache_read: 8144,
+        cost_usd: 9536 * 7.5e-7 + 133 * 3.75e-6 + 8144 * 7.5e-8,
+        date: "2026-09-10",
+        input: 9536,
+        model: "gemini-3.8-flash",
+        output: 133,
+        provider: "antigravity",
+      },
+    ]);
+  });
+
+  it("leaves the prices alone when no Antigravity step is in the window", async () => {
+    await writeConfig(paths.configFile, { key, url: "http://localhost:8797" });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "old.db"), {
+      steps: [
+        {
+          at: new Date("2026-08-01T12:00:00.000Z"),
+          input: 999,
+          modelCode: 1318,
+          output: 999,
+        },
+      ],
+    });
+    const requests: Request[] = [];
+    const priceCalls: string[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":3}'),
+        priceCalls,
+      ),
+      identity,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+      timezone: "UTC",
+    });
+
+    expect(result).toMatchObject({ accepted: 3, kind: "reported" });
+    expect(priceCalls).toEqual([]);
+    expect(JSON.parse(String(requests[0].init.body)).days).toEqual(
+      expectedDays,
+    );
+  });
+
+  it("fails when the prices cannot be loaded for Antigravity steps", async () => {
+    await writeConfig(paths.configFile, { key, url: "http://localhost:8797" });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      steps: [
+        {
+          at: new Date("2026-09-10T12:00:00.000Z"),
+          input: 10,
+          modelCode: 1318,
+          output: 10,
+        },
+      ],
+    });
+
+    const result = await collect({
+      env: { home },
+      fetcher: async (url) => {
+        if (url === litellmPricesUrl) {
+          throw new Error("offline");
+        }
+        throw new Error("collect must not report without prices");
+      },
+      identity,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "failed",
+      message: "could not load model prices: offline",
+    });
   });
 
   it("fails with the status and the body when the key is rejected", async () => {

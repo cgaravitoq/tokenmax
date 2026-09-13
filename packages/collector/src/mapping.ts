@@ -1,5 +1,9 @@
-import type { CcusageDaily } from "./ccusage";
+import type { AntigravityStep } from "./antigravity";
+import { type CcusageDaily, calendarDate } from "./ccusage";
+import { costOf, type PriceTable } from "./pricing";
 import type { UsageDay } from "./usage";
+
+export const antigravityProvider = "antigravity";
 
 const agentModelPrefix = /^\[[^\]]*\]\s*/;
 
@@ -46,6 +50,57 @@ export function mapCcusageDays(output: CcusageDaily): UsageDay[] {
     }
   }
 
+  return sortedRows(rows);
+}
+
+export function mapAntigravitySteps(
+  steps: AntigravityStep[],
+  timezone: string,
+  prices: PriceTable,
+): UsageDay[] {
+  const rows = new Map<string, UsageDay>();
+
+  for (const step of steps) {
+    const row: UsageDay = {
+      cache_create: 0,
+      cache_read: step.cacheRead,
+      cost_usd: 0,
+      date: calendarDate(step.at, timezone),
+      input: step.input,
+      model: step.model,
+      output: step.output,
+      provider: antigravityProvider,
+    };
+    if (isEmptyRow(row)) {
+      continue;
+    }
+    const key = rowKey(row);
+    const existing = rows.get(key);
+    if (existing === undefined) {
+      rows.set(key, row);
+      continue;
+    }
+    existing.cache_read += row.cache_read;
+    existing.input += row.input;
+    existing.output += row.output;
+  }
+
+  for (const row of rows.values()) {
+    const price = prices.get(row.model) ?? prices.get(`gemini/${row.model}`);
+    row.cost_usd =
+      price === undefined
+        ? 0
+        : costOf(price, {
+            cacheRead: row.cache_read,
+            input: row.input,
+            output: row.output,
+          });
+  }
+
+  return sortedRows(rows);
+}
+
+function sortedRows(rows: Map<string, UsageDay>): UsageDay[] {
   return [...rows.values()].sort(
     (a, b) =>
       a.date.localeCompare(b.date) ||
