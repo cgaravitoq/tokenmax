@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
 import type { Fetcher } from "./http";
@@ -57,19 +57,32 @@ export function costOf(price: ModelPrice, usage: PricedUsage): number {
 
 async function readCache(
   pricesFile: string,
-): Promise<{ modifiedAt: number; source: string } | null> {
+): Promise<{ modifiedAt: number; table: PriceTable } | null> {
+  let source: string;
+  let modifiedAt: number;
   try {
-    const [source, info] = await Promise.all([
+    [source, modifiedAt] = await Promise.all([
       readFile(pricesFile, "utf8"),
-      stat(pricesFile),
+      stat(pricesFile).then((info) => info.mtimeMs),
     ]);
-    return { modifiedAt: info.mtimeMs, source };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return null;
     }
     throw error;
   }
+  try {
+    return { modifiedAt, table: parseLitellmPrices(source) };
+  } catch {
+    return null;
+  }
+}
+
+async function writeCache(pricesFile: string, source: string): Promise<void> {
+  await mkdir(dirname(pricesFile), { recursive: true });
+  const partial = `${pricesFile}.${process.pid}.tmp`;
+  await writeFile(partial, source);
+  await rename(partial, pricesFile);
 }
 
 async function fetchPrices(fetcher: Fetcher): Promise<string> {
@@ -88,7 +101,7 @@ export async function loadPrices(
 ): Promise<PriceTable> {
   const cached = await readCache(pricesFile);
   if (cached !== null && now.getTime() - cached.modifiedAt < maxAgeMs) {
-    return parseLitellmPrices(cached.source);
+    return cached.table;
   }
   let source: string;
   let table: PriceTable;
@@ -97,12 +110,11 @@ export async function loadPrices(
     table = parseLitellmPrices(source);
   } catch (error) {
     if (cached !== null) {
-      return parseLitellmPrices(cached.source);
+      return cached.table;
     }
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`could not load model prices: ${message}`);
   }
-  await mkdir(dirname(pricesFile), { recursive: true });
-  await writeFile(pricesFile, source);
+  await writeCache(pricesFile, source);
   return table;
 }

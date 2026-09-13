@@ -1,6 +1,7 @@
 import {
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
   utimes,
@@ -153,6 +154,25 @@ describe("loadPrices", () => {
     );
 
     expect(table.size).toBe(2);
+  });
+
+  it("refetches when the cache is not a price table", async () => {
+    const calls: string[] = [];
+    const now = new Date("2026-09-13T12:00:00.000Z");
+    await writeCache("{", new Date(now.getTime() - 60 * 1000));
+
+    const table = await loadPrices(
+      fetcherReturning(200, sample, calls),
+      pricesFile,
+      now,
+    );
+
+    expect(calls).toEqual([litellmPricesUrl]);
+    expect(table.size).toBe(2);
+    expect(await readFile(pricesFile, "utf8")).toBe(sample);
+    expect(await readdir(join(dir, "tokenmax"))).toEqual([
+      "litellm-prices.json",
+    ]);
   });
 
   it("fails without a cache when the fetch fails", async () => {
