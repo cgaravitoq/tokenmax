@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { sinceArgument } from "./ccusage";
-import { type CollectResult, collect, type Fetcher } from "./collect";
+import { type CollectResult, collect } from "./collect";
 import type { CommandRunner } from "./command";
 import { writeConfig } from "./config";
+import type { Fetcher } from "./http";
 import { type CollectorPaths, collectorPaths } from "./paths";
 import type { UsageDay } from "./usage";
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
-import { collect, type Fetcher } from "./collect";
+import { collect } from "./collect";
 import type { CommandRunner } from "./command";
+import type { Fetcher } from "./http";
 import { install } from "./install";
 import { type MachineIdentity, readMachineIdentity } from "./machine";
 import { type CollectorEnv, processEnv } from "./paths";

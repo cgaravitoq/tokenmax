@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type CliIo, runCli } from "./cli";
-import type { Fetcher } from "./collect";
 import type { CommandRunner } from "./command";
 import { writeConfig } from "./config";
+import type { Fetcher } from "./http";
 import { type CollectorPaths, collectorPaths } from "./paths";
 
 const identity = { hostname: "test-host", platformUuid: "abc-123" };

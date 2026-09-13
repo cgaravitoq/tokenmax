@@ -1,17 +1,11 @@
 import { readCcusageDaily, sinceArgument } from "./ccusage";
 import { type CommandRunner, runCommand } from "./command";
 import { readConfig, runtimeTimezone } from "./config";
+import type { Fetcher } from "./http";
 import { type MachineIdentity, machineId } from "./machine";
 import { mapCcusageDays } from "./mapping";
 import { type CollectorEnv, collectorPaths, processEnv } from "./paths";
 import type { UsageDay, UsageReport } from "./usage";
-
-export interface HttpResponse {
-  status: number;
-  text(): Promise<string>;
-}
-
-export type Fetcher = (url: string, init: RequestInit) => Promise<HttpResponse>;
 
 export interface CollectOptions {
   identity: MachineIdentity;
