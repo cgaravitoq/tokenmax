@@ -47,6 +47,7 @@ bun run audit:production
 
 - `bun install --frozen-lockfile`, `bun run format`, `bun run lint:slop`, `bun run check-types`, `bun run test`, `bun run test:dependency-policy` and `bun run audit:production` must pass before a pull request merges.
 - The `ci` workflow runs these gates on its configured pull request, `main` push, merge queue and manual dispatch events, and also lints pull request titles.
+- On `main`, the `deploy` job ships the worker and the `publish` job publishes `tokenmax-collector` to npm when `packages/collector/package.json` carries a version that is not published yet, so a collector release is a version bump merged to `main`.
 - `.husky/pre-commit` runs lint-staged and the workspace type check, and `.husky/commit-msg` runs commitlint.
 - A Dependabot patch merges itself only after `gh pr checks --watch --fail-fast` reports every check green, and a patch that touches ccusage always waits for a human.
 - Never bypass hooks, and never create Cloudflare resources from repository automation.
@@ -63,7 +64,7 @@ The privacy page renders the four `PRIVACY_*` secrets, so every instance carries
 ## Collector
 
 The collector is `packages/collector`, npm name `tokenmax-collector`, bin `tokenmax`, and requires Bun 1.3.14 or newer because `src/cli.ts` runs as TypeScript.
-Install it with `bun add -g tokenmax-collector` once published, then run `tokenmax install --url <url> --key <key>` with optional `--timezone <zone>`.
+Install it with `bun add -g tokenmax-collector`, then run `tokenmax install --url <url> --key <key>` with optional `--timezone <zone>`.
 Use the global package for scheduling; non-dry `install` rejects Bun's `/install/cache/` and `bunx-<digits>-<package>` paths, while `--dry-run` can still print their plans.
 By default it reads `~/.config/tokenmax/config.json`, with `TOKENMAX_HOME` and `XDG_CONFIG_HOME` able to change that location, and sends the report to `POST /api/report`.
 `install` writes that config plus a launchd agent on macOS or a systemd user timer on Linux, and Windows is unsupported.
@@ -79,4 +80,4 @@ Every sign-in revokes every existing key.
 `POST /api/keys/rotate` with the bearer key returns a fresh one.
 `tokenmax collect` reports the last 14 calendar days to `/api/report`.
 The schedule runs the installed Bun with `cli.ts collect` every five minutes.
-Installation is `bun add -g tokenmax-collector` (once published, gate 2) then `tokenmax install --url <url> --key <key>`.
+Installation is `bun add -g tokenmax-collector` then `tokenmax install --url <url> --key <key>`.
