@@ -12,6 +12,7 @@ export interface CollectorEnv {
 export interface CollectorPaths {
   configFile: string;
   plist: string;
+  pricesFile: string;
   service: string;
   stderrLog: string;
   stdoutLog: string;
@@ -54,6 +55,7 @@ export function collectorPaths(env: CollectorEnv): CollectorPaths {
       "LaunchAgents",
       "dev.tokenmax.collector.plist",
     ),
+    pricesFile: resolve(configHome, "tokenmax", "litellm-prices.json"),
     service: resolve(home, ".config", "systemd", "user", "tokenmax.service"),
     stderrLog: resolve(logDir, "tokenmax.err.log"),
     stdoutLog: resolve(logDir, "tokenmax.log"),

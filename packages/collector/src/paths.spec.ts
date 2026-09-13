@@ -67,6 +67,7 @@ describe("collectorPaths", () => {
     });
 
     expect(paths.configFile).toBe("/xdg/config/tokenmax/config.json");
+    expect(paths.pricesFile).toBe("/xdg/config/tokenmax/litellm-prices.json");
     expect(paths.stdoutLog).toBe("/xdg/state/tokenmax/logs/tokenmax.log");
   });
 });
