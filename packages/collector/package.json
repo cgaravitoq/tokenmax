@@ -1,6 +1,6 @@
 {
   "name": "tokenmax-collector",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Report local ccusage token usage to a tokenmax instance",
   "type": "module",
   "bin": {
