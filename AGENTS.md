@@ -19,6 +19,7 @@ tokenmax/
 - Biome 2.5 formats and lints, and oxlint 1.82 with the ultracite anti-slop preset is the second linter.
 - Vitest 4.1 runs the workspace specs, and `bun test` runs the dependency policy test.
 - The collector spawns ccusage 20.0.20, pinned exact because it reads an undocumented JSON shape through a per-platform native binary.
+- The collector also decodes the Antigravity CLI conversations under `~/.gemini/antigravity-cli/conversations` itself, because ccusage has no adapter for them: each model step is a protobuf in SQLite, read through `node:sqlite`, priced from the LiteLLM table cached for a day at `~/.config/tokenmax/litellm-prices.json`, and reported as the `antigravity` provider.
 - The worker will be Astro 7 with the Cloudflare adapter, a Hono 4 API, a Vue 3 key page and D1.
 
 ## Conventions

@@ -48,6 +48,7 @@ tokenmax install --url <url> --key <key>
 Pass `--timezone <zone>` to `install` to override the machine's IANA timezone.
 Non-dry `tokenmax install` refuses Bun paths containing `/install/cache/` or a `bunx-<digits>-<package>` directory segment because those paths can disappear while a schedule still points to them.
 Run `tokenmax collect` to report the last 14 calendar days immediately.
+The rows come from ccusage for every agent it detects, plus the Antigravity CLI conversations under `~/.gemini/antigravity-cli`, which the collector decodes itself and prices from the LiteLLM table it caches for a day at `~/.config/tokenmax/litellm-prices.json`.
 
 To upgrade, reinstall the latest package and regenerate the schedule with the existing key:
 
