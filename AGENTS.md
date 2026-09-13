@@ -14,7 +14,7 @@ tokenmax/
 
 ## Stack
 
-- Bun 1.3.14 workspaces (`apps/*` and `packages/*`), no Turbo.
+- Bun 1.4.0 workspaces (`apps/*` and `packages/*`), no Turbo.
 - TypeScript 6 in strict mode, with Node 24.19.0 declared in `engines.node`.
 - Biome 2.5 formats and lints, and oxlint 1.82 with the ultracite anti-slop preset is the second linter.
 - Vitest 4.1 runs the workspace specs, and `bun test` runs the dependency policy and workflow golden tests under `scripts/`.
@@ -63,7 +63,7 @@ The privacy page renders the four `PRIVACY_*` secrets, so every instance carries
 
 ## Collector
 
-The collector is `packages/collector`, npm name `tokenmax-collector`, bin `tokenmax`, and requires Bun 1.3.14 or newer because `src/cli.ts` runs as TypeScript.
+The collector is `packages/collector`, npm name `tokenmax-collector`, bin `tokenmax`, and requires Bun 1.4.0 or newer because `src/cli.ts` runs as TypeScript and reads SQLite through `node:sqlite`.
 Install it with `bun add -g tokenmax-collector`, then run `tokenmax install --url <url> --key <key>` with optional `--timezone <zone>`.
 Use the global package for scheduling; non-dry `install` rejects Bun's `/install/cache/` and `bunx-<digits>-<package>` paths, while `--dry-run` can still print their plans.
 By default it reads `~/.config/tokenmax/config.json`, with `TOKENMAX_HOME` and `XDG_CONFIG_HOME` able to change that location, and sends the report to `POST /api/report`.

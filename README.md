@@ -10,7 +10,7 @@ The worker is `apps/worker`: an Astro 7 app on the Cloudflare adapter with a Hon
 
 ### Prerequisites
 
-A Cloudflare account, Bun 1.3.14 and `bunx wrangler login`.
+A Cloudflare account, Bun 1.4.0 and `bunx wrangler login`.
 
 ### Deploy
 
@@ -35,7 +35,7 @@ Providers and models rank by tokens descending then name, days ascend, and error
 
 ## Collector
 
-The collector requires Bun 1.3.14 or newer and supports macOS and Linux.
+The collector requires Bun 1.4.0 or newer, which ships `node:sqlite`, and supports macOS and Linux.
 Windows is unsupported.
 
 Install it globally and create the local schedule:

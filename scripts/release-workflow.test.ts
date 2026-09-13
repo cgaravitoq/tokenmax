@@ -45,7 +45,7 @@ const expectedWorkflow = {
             "registry-url": "https://registry.npmjs.org",
           },
         },
-        { uses: setupBunAction, with: { "bun-version": "1.3.14" } },
+        { uses: setupBunAction, with: { "bun-version": "1.4.0" } },
         { name: "Install dependencies", run: "bun install --frozen-lockfile" },
         {
           name: "Check the tag against the package version",
