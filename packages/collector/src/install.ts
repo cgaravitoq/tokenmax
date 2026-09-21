@@ -3,8 +3,10 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type CollectorConfig,
+  type CollectorTarget,
   canonicalTimezone,
   collectorConfig,
+  readConfig,
   runtimeTimezone,
   writeConfig,
 } from "./config";
@@ -67,6 +69,13 @@ function scheduleFiles(
   ];
 }
 
+async function configuredTargets(
+  configFile: string,
+): Promise<CollectorTarget[]> {
+  const existing = await readConfig(configFile);
+  return existing.kind === "ok" ? existing.config.targets : [];
+}
+
 export async function install(options: InstallOptions): Promise<InstallPlan> {
   const env = options.env ?? processEnv();
   const platform = resolvePlatform(options.platform ?? process.platform);
@@ -76,10 +85,12 @@ export async function install(options: InstallOptions): Promise<InstallPlan> {
   if (timezone === null) {
     throw new Error(`invalid timezone: ${requestedTimezone}`);
   }
+  const others = (await configuredTargets(paths.configFile)).filter(
+    (target) => target.url !== options.url,
+  );
   const config = collectorConfig.parse({
-    key: options.key,
+    targets: [...others, { key: options.key, url: options.url }],
     timezone,
-    url: options.url,
   });
   const cliPath = options.cliPath ?? resolveCliPath();
   if (
@@ -106,6 +117,9 @@ export async function install(options: InstallOptions): Promise<InstallPlan> {
   const log = options.log ?? console.log;
 
   log(`config: ${plan.configFile} (600, key redacted)`);
+  for (const target of plan.config.targets) {
+    log(`target: ${target.url}`);
+  }
   for (const file of plan.files) {
     log(`schedule: ${file.path}`);
   }

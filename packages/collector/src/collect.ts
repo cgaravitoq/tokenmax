@@ -1,4 +1,5 @@
 import {
+  type AntigravityStep,
   antigravityConversationsDir,
   readAntigravitySteps,
 } from "./antigravity";
@@ -9,12 +10,19 @@ import {
   windowStart,
 } from "./ccusage";
 import { type CommandRunner, runCommand } from "./command";
-import { readConfig, runtimeTimezone } from "./config";
+import { type CollectorTarget, readConfig, runtimeTimezone } from "./config";
+import { type DevinStep, devinTranscriptsDir, readDevinSteps } from "./devin";
 import type { Fetcher } from "./http";
 import { type MachineIdentity, machineId } from "./machine";
-import { mapAntigravitySteps, mapCcusageDays } from "./mapping";
+import {
+  antigravityProvider,
+  devinProvider,
+  mapAntigravitySteps,
+  mapCcusageDays,
+  mapDevinSteps,
+} from "./mapping";
 import { type CollectorEnv, collectorPaths, processEnv } from "./paths";
-import { loadPrices } from "./pricing";
+import { loadPrices, type PriceTable } from "./pricing";
 import type { UsageDay, UsageReport } from "./usage";
 
 export interface CollectOptions {
@@ -26,8 +34,17 @@ export interface CollectOptions {
   timezone?: string;
 }
 
+export type TargetResult =
+  | { accepted: number; url: string }
+  | { message: string; url: string };
+
 export type CollectResult =
-  | { kind: "reported"; accepted: number; machine: string; warnings: string[] }
+  | {
+      kind: "reported";
+      machine: string;
+      targets: TargetResult[];
+      warnings: string[];
+    }
   | { kind: "empty"; warnings: string[] }
   | { kind: "missing-config"; configFile: string }
   | { kind: "failed"; message: string };
@@ -56,63 +73,100 @@ function acceptedCount(body: string): number | null {
   return typeof accepted === "number" ? accepted : null;
 }
 
-interface AntigravityRows {
+interface LocalRows {
   days: UsageDay[];
   warnings: string[];
 }
 
-async function report(
-  fetcher: Fetcher,
-  url: string,
-  key: string,
-  usage: UsageReport,
-  warnings: string[],
-): Promise<CollectResult> {
-  const response = await fetcher(reportUrl(url), {
-    body: JSON.stringify(usage),
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
-  const body = await response.text();
-  if (response.status !== 200) {
-    return {
-      kind: "failed",
-      message: `tokenmax responded ${response.status}: ${body}`,
-    };
-  }
-  const accepted = acceptedCount(body);
-  if (accepted === null) {
-    return {
-      kind: "failed",
-      message: `tokenmax responded an unexpected body: ${body}`,
-    };
-  }
-  return { accepted, kind: "reported", machine: usage.machine, warnings };
+interface LocalSource<Step extends { at: Date }> {
+  map: (steps: Step[], timezone: string, prices: PriceTable) => UsageDay[];
+  provider: string;
+  read: (home: string) => Promise<{ failures: string[]; steps: Step[] }>;
 }
 
-async function antigravityDays(
-  home: string,
-  today: Date,
-  timezone: string,
+interface LocalWindow {
+  fetcher: Fetcher;
+  home: string;
+  pricesFile: string;
+  since: string;
+  timezone: string;
+  today: Date;
+}
+
+const antigravitySource: LocalSource<AntigravityStep> = {
+  map: mapAntigravitySteps,
+  provider: antigravityProvider,
+  read: (home) => readAntigravitySteps(antigravityConversationsDir(home)),
+};
+
+const devinSource: LocalSource<DevinStep> = {
+  map: mapDevinSteps,
+  provider: devinProvider,
+  read: (home) => readDevinSteps(devinTranscriptsDir(home)),
+};
+
+async function report(
   fetcher: Fetcher,
-  pricesFile: string,
-): Promise<AntigravityRows> {
-  const since = windowStart(today, timezone);
-  const usage = await readAntigravitySteps(antigravityConversationsDir(home));
-  const warnings = usage.failures.map(
-    (failure) => `antigravity: skipped ${failure}`,
-  );
-  const steps = usage.steps.filter(
-    (step) => calendarDate(step.at, timezone) >= since,
-  );
-  if (steps.length === 0) {
-    return { days: [], warnings };
+  target: CollectorTarget,
+  body: string,
+): Promise<TargetResult> {
+  const { url } = target;
+  try {
+    const response = await fetcher(reportUrl(url), {
+      body,
+      headers: {
+        Authorization: `Bearer ${target.key}`,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+    const answer = await response.text();
+    if (response.status !== 200) {
+      return {
+        message: `tokenmax responded ${response.status}: ${answer}`,
+        url,
+      };
+    }
+    const accepted = acceptedCount(answer);
+    if (accepted === null) {
+      return {
+        message: `tokenmax responded an unexpected body: ${answer}`,
+        url,
+      };
+    }
+    return { accepted, url };
+  } catch (error) {
+    return { message: messageOf(error), url };
   }
-  const prices = await loadPrices(fetcher, pricesFile, today);
-  return { days: mapAntigravitySteps(steps, timezone, prices), warnings };
+}
+
+async function localDays<Step extends { at: Date }>(
+  source: LocalSource<Step>,
+  window: LocalWindow,
+): Promise<LocalRows> {
+  try {
+    const usage = await source.read(window.home);
+    const warnings = usage.failures.map(
+      (failure) => `${source.provider}: skipped ${failure}`,
+    );
+    const steps = usage.steps.filter(
+      (step) => calendarDate(step.at, window.timezone) >= window.since,
+    );
+    if (steps.length === 0) {
+      return { days: [], warnings };
+    }
+    const prices = await loadPrices(
+      window.fetcher,
+      window.pricesFile,
+      window.today,
+    );
+    return { days: source.map(steps, window.timezone, prices), warnings };
+  } catch (error) {
+    return {
+      days: [],
+      warnings: [`${source.provider}: ${messageOf(error)}`],
+    };
+  }
 }
 
 export async function collect(options: CollectOptions): Promise<CollectResult> {
@@ -148,32 +202,27 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
     return { kind: "failed", message: messageOf(error) };
   }
 
-  let antigravity: AntigravityRows;
-  try {
-    antigravity = await antigravityDays(
-      env.home,
-      today,
-      timezone,
-      fetcher,
-      paths.pricesFile,
-    );
-  } catch (error) {
-    antigravity = { days: [], warnings: [`antigravity: ${messageOf(error)}`] };
-  }
-  days.push(...antigravity.days);
+  const window: LocalWindow = {
+    fetcher,
+    home: env.home,
+    pricesFile: paths.pricesFile,
+    since: windowStart(today, timezone),
+    timezone,
+    today,
+  };
+  const antigravity = await localDays(antigravitySource, window);
+  const devin = await localDays(devinSource, window);
+  days.push(...antigravity.days, ...devin.days);
+  const warnings = [...antigravity.warnings, ...devin.warnings];
   if (days.length === 0) {
-    return { kind: "empty", warnings: antigravity.warnings };
+    return { kind: "empty", warnings };
   }
 
-  try {
-    return await report(
-      fetcher,
-      config.config.url,
-      config.config.key,
-      { days, machine, timezone },
-      antigravity.warnings,
-    );
-  } catch (error) {
-    return { kind: "failed", message: messageOf(error) };
+  const usage: UsageReport = { days, machine, timezone };
+  const body = JSON.stringify(usage);
+  const targets: TargetResult[] = [];
+  for (const target of config.config.targets) {
+    targets.push(await report(fetcher, target, body));
   }
+  return { kind: "reported", machine, targets, warnings };
 }

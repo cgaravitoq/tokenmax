@@ -67,7 +67,7 @@ afterEach(async () => {
 
 describe("collect", () => {
   it("prints the accepted days and exits 0", async () => {
-    await writeConfig(paths.configFile, { key, url });
+    await writeConfig(paths.configFile, { targets: [{ key, url }] });
     const result = await run(["collect"], {
       fetcher: fetcherWith(200, '{"accepted":3}'),
       runner: runnerWith(sample),
@@ -76,12 +76,35 @@ describe("collect", () => {
     expect(result).toEqual({
       code: 0,
       stderr: [],
-      stdout: ["accepted 3 days for test-host-abc-123"],
+      stdout: [`accepted 3 days for test-host-abc-123 at ${url}`],
+    });
+  });
+
+  it("prints one line per target and exits 1 when any target fails", async () => {
+    const other = "https://tv.example";
+    await writeConfig(paths.configFile, {
+      targets: [
+        { key, url },
+        { key: "otv_other", url: other },
+      ],
+    });
+    const result = await run(["collect"], {
+      fetcher: async (requestUrl) =>
+        requestUrl.startsWith(other)
+          ? { status: 401, text: async () => '{"error":"unauthorized"}' }
+          : { status: 200, text: async () => '{"accepted":3}' },
+      runner: runnerWith(sample),
+    });
+
+    expect(result).toEqual({
+      code: 1,
+      stderr: [`${other}: tokenmax responded 401: {"error":"unauthorized"}`],
+      stdout: [`accepted 3 days for test-host-abc-123 at ${url}`],
     });
   });
 
   it("prints nothing to report and exits 0 without usage", async () => {
-    await writeConfig(paths.configFile, { key, url });
+    await writeConfig(paths.configFile, { targets: [{ key, url }] });
     const result = await run(["collect"], {
       fetcher: failingFetch,
       runner: runnerWith('{"daily":[]}'),
@@ -110,7 +133,7 @@ describe("collect", () => {
   });
 
   it("prints the status and the body and exits 1 when the key is rejected", async () => {
-    await writeConfig(paths.configFile, { key, url });
+    await writeConfig(paths.configFile, { targets: [{ key, url }] });
     const result = await run(["collect"], {
       fetcher: fetcherWith(401, '{"error":"unauthorized"}'),
       runner: runnerWith(sample),
@@ -118,13 +141,13 @@ describe("collect", () => {
 
     expect(result).toEqual({
       code: 1,
-      stderr: ['tokenmax responded 401: {"error":"unauthorized"}'],
+      stderr: [`${url}: tokenmax responded 401: {"error":"unauthorized"}`],
       stdout: [],
     });
   });
 
   it("prints the network error and exits 1 when tokenmax is unreachable", async () => {
-    await writeConfig(paths.configFile, { key, url });
+    await writeConfig(paths.configFile, { targets: [{ key, url }] });
     const result = await run(["collect"], {
       fetcher: failingFetch,
       runner: runnerWith(sample),
@@ -132,7 +155,7 @@ describe("collect", () => {
 
     expect(result).toEqual({
       code: 1,
-      stderr: ["fetch failed: ECONNREFUSED 127.0.0.1:8797"],
+      stderr: [`${url}: fetch failed: ECONNREFUSED 127.0.0.1:8797`],
       stdout: [],
     });
   });
@@ -161,14 +184,14 @@ describe("install", () => {
       stderr: [],
       stdout: [
         `config: ${paths.configFile} (600, key redacted)`,
+        `target: ${url}`,
         `schedule: ${paths.plist}`,
         `load: launchctl bootstrap gui/501 ${paths.plist}`,
       ],
     });
     expect(JSON.parse(await readFile(paths.configFile, "utf8"))).toEqual({
-      key,
+      targets: [{ key, url }],
       timezone: "Europe/Madrid",
-      url,
     });
     expect(await readFile(paths.plist, "utf8")).toContain(
       `<string>${cliPath}</string>`,
@@ -233,8 +256,9 @@ describe("install", () => {
 
     expect(result.code).toBe(0);
     expect(result.stderr).toEqual([]);
-    expect(result.stdout.slice(0, 3)).toEqual([
+    expect(result.stdout.slice(0, 4)).toEqual([
       `config: ${paths.configFile} (600, key redacted)`,
+      `target: ${url}`,
       `schedule: ${paths.plist}`,
       `--- ${paths.plist} ---`,
     ]);

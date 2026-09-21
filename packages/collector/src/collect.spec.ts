@@ -8,10 +8,12 @@ import { sinceArgument } from "./ccusage";
 import { type CollectResult, collect } from "./collect";
 import type { CommandRunner } from "./command";
 import { writeConfig } from "./config";
+import { devinTranscriptsDir } from "./devin";
 import type { Fetcher } from "./http";
 import { type CollectorPaths, collectorPaths } from "./paths";
 import { litellmPricesUrl } from "./pricing";
 import { writeConversation } from "./test/antigravity-fixture";
+import { writeTranscript } from "./test/devin-fixture";
 import type { UsageDay } from "./usage";
 
 const isCalendarDate = (value: string): boolean => {
@@ -47,6 +49,8 @@ const usageReport = z.object({
 
 const identity = { hostname: "test-host", platformUuid: "abc-123" };
 const key = "tmx_secret_value";
+const url = "http://localhost:8797";
+const target = { key, url };
 const sample = await readFile(
   new URL("./test/ccusage-daily.json", import.meta.url),
   "utf8",
@@ -123,6 +127,12 @@ const reportFetcher = (
 };
 
 const litellmPrices = JSON.stringify({
+  "claude-fable-5-1": {
+    cache_creation_input_token_cost: 1.25e-5,
+    cache_read_input_token_cost: 2.5e-7,
+    input_cost_per_token: 1e-5,
+    output_cost_per_token: 5e-5,
+  },
   "gemini-3.8-flash": {
     cache_read_input_token_cost: 7.5e-8,
     input_cost_per_token: 7.5e-7,
@@ -155,9 +165,8 @@ afterEach(async () => {
 describe("collect", () => {
   it("reports the mapped days to the tokenmax report endpoint", async () => {
     await writeConfig(paths.configFile, {
-      key,
+      targets: [{ key, url: "http://localhost:8797/" }],
       timezone: "Europe/Madrid",
-      url: "http://localhost:8797/",
     });
     const calls: { args: string[]; command: string }[] = [];
     const requests: Request[] = [];
@@ -171,9 +180,9 @@ describe("collect", () => {
     });
 
     expect(result).toEqual({
-      accepted: 3,
       kind: "reported",
       machine: "test-host-abc-123",
+      targets: [{ accepted: 3, url: "http://localhost:8797/" }],
       warnings: [],
     });
     expect(calls).toHaveLength(1);
@@ -209,7 +218,7 @@ describe("collect", () => {
   });
 
   it("reports in the machine zone when the config has none", async () => {
-    await writeConfig(paths.configFile, { key, url: "http://localhost:8797" });
+    await writeConfig(paths.configFile, { targets: [target] });
     const calls: { args: string[]; command: string }[] = [];
     const requests: Request[] = [];
 
@@ -236,9 +245,8 @@ describe("collect", () => {
 
   it("prefers the config zone over the machine zone", async () => {
     await writeConfig(paths.configFile, {
-      key,
+      targets: [target],
       timezone: "Europe/Madrid",
-      url: "http://localhost:8797",
     });
     const calls: { args: string[]; command: string }[] = [];
     const requests: Request[] = [];
@@ -266,9 +274,8 @@ describe("collect", () => {
 
   it("adds the Antigravity steps of the window as their own provider", async () => {
     await writeConfig(paths.configFile, {
-      key,
+      targets: [target],
       timezone: "Europe/Madrid",
-      url: "http://localhost:8797",
     });
     const conversations = antigravityConversationsDir(home);
     await mkdir(conversations, { recursive: true });
@@ -306,9 +313,9 @@ describe("collect", () => {
     });
 
     expect(result).toEqual({
-      accepted: 4,
       kind: "reported",
       machine: "test-host-abc-123",
+      targets: [{ accepted: 4, url }],
       warnings: [],
     });
     expect(priceCalls).toEqual([litellmPricesUrl]);
@@ -328,8 +335,106 @@ describe("collect", () => {
     ]);
   });
 
+  it("adds the Devin steps of the window as their own provider", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "Europe/Madrid",
+    });
+    const transcripts = devinTranscriptsDir(home);
+    await mkdir(transcripts, { recursive: true });
+    writeTranscript(join(transcripts, "abiding-hall.json"), [
+      {
+        at: new Date("2026-08-28T21:00:00.000Z"),
+        model: "claude-fable-5-1-high",
+        output: 999,
+        prompt: 999,
+      },
+      {
+        at: new Date("2026-09-09T22:30:00.000Z"),
+        cacheCreate: 17366,
+        cacheRead: 12510,
+        model: "claude-fable-5-1-xhigh",
+        output: 223,
+        prompt: 29878,
+      },
+    ]);
+    const requests: Request[] = [];
+    const priceCalls: string[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":4}'),
+        priceCalls,
+      ),
+      identity,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "test-host-abc-123",
+      targets: [{ accepted: 4, url }],
+      warnings: [],
+    });
+    expect(priceCalls).toEqual([litellmPricesUrl]);
+    expect(JSON.parse(String(requests[0].init.body)).days).toEqual([
+      ...expectedDays,
+      {
+        cache_create: 17366,
+        cache_read: 12510,
+        cost_usd: 2 * 1e-5 + 223 * 5e-5 + 12510 * 2.5e-7 + 17366 * 1.25e-5,
+        date: "2026-09-10",
+        input: 2,
+        model: "claude-fable-5-1",
+        output: 223,
+        provider: "devin",
+      },
+    ]);
+  });
+
+  it("reports around a transcript it cannot read and names it", async () => {
+    await writeConfig(paths.configFile, { targets: [target] });
+    const transcripts = devinTranscriptsDir(home);
+    await mkdir(transcripts, { recursive: true });
+    await writeFile(join(transcripts, "broken.json"), "{");
+    writeTranscript(join(transcripts, "ok.json"), [
+      {
+        at: new Date("2026-09-10T12:00:00.000Z"),
+        model: "swe-2-medium",
+        output: 10,
+        prompt: 10,
+      },
+    ]);
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":4}'),
+        [],
+      ),
+      identity,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "test-host-abc-123",
+      targets: [{ accepted: 4, url }],
+      warnings: [
+        expect.stringMatching(
+          new RegExp(`^devin: skipped ${join(transcripts, "broken.json")}: `),
+        ),
+      ],
+    });
+    expect(JSON.parse(String(requests[0].init.body)).days).toHaveLength(4);
+  });
+
   it("leaves the prices alone when no Antigravity step is in the window", async () => {
-    await writeConfig(paths.configFile, { key, url: "http://localhost:8797" });
+    await writeConfig(paths.configFile, { targets: [target] });
     const conversations = antigravityConversationsDir(home);
     await mkdir(conversations, { recursive: true });
     writeConversation(join(conversations, "old.db"), {
@@ -357,7 +462,10 @@ describe("collect", () => {
       timezone: "UTC",
     });
 
-    expect(result).toMatchObject({ accepted: 3, kind: "reported" });
+    expect(result).toMatchObject({
+      kind: "reported",
+      targets: [{ accepted: 3 }],
+    });
     expect(priceCalls).toEqual([]);
     expect(JSON.parse(String(requests[0].init.body)).days).toEqual(
       expectedDays,
@@ -365,7 +473,7 @@ describe("collect", () => {
   });
 
   it("still reports the ccusage days when the prices cannot be loaded", async () => {
-    await writeConfig(paths.configFile, { key, url: "http://localhost:8797" });
+    await writeConfig(paths.configFile, { targets: [target] });
     const conversations = antigravityConversationsDir(home);
     await mkdir(conversations, { recursive: true });
     writeConversation(join(conversations, "a.db"), {
@@ -395,9 +503,9 @@ describe("collect", () => {
     });
 
     expect(result).toEqual({
-      accepted: 3,
       kind: "reported",
       machine: "test-host-abc-123",
+      targets: [{ accepted: 3, url }],
       warnings: ["antigravity: could not load model prices: offline"],
     });
     expect(JSON.parse(String(requests[0].init.body)).days).toEqual(
@@ -406,7 +514,7 @@ describe("collect", () => {
   });
 
   it("reports around a conversation it cannot read and names it", async () => {
-    await writeConfig(paths.configFile, { key, url: "http://localhost:8797" });
+    await writeConfig(paths.configFile, { targets: [target] });
     const conversations = antigravityConversationsDir(home);
     await mkdir(conversations, { recursive: true });
     await writeFile(join(conversations, "broken.db"), "not a database");
@@ -435,9 +543,9 @@ describe("collect", () => {
     });
 
     expect(result).toEqual({
-      accepted: 4,
       kind: "reported",
       machine: "test-host-abc-123",
+      targets: [{ accepted: 4, url }],
       warnings: [
         `antigravity: skipped ${join(conversations, "broken.db")}: file is not a database`,
       ],
@@ -445,8 +553,8 @@ describe("collect", () => {
     expect(JSON.parse(String(requests[0].init.body)).days).toHaveLength(4);
   });
 
-  it("fails with the status and the body when the key is rejected", async () => {
-    await writeConfig(paths.configFile, { key, url: "http://localhost:8797" });
+  it("names the target with the status and the body when the key is rejected", async () => {
+    await writeConfig(paths.configFile, { targets: [target] });
     const requests: Request[] = [];
     const result = await collect({
       env: { home },
@@ -457,13 +565,86 @@ describe("collect", () => {
     });
 
     expect(result).toEqual({
-      kind: "failed",
-      message: 'tokenmax responded 401: {"error":"unauthorized"}',
+      kind: "reported",
+      machine: "test-host-abc-123",
+      targets: [
+        { message: 'tokenmax responded 401: {"error":"unauthorized"}', url },
+      ],
+      warnings: [],
     });
   });
 
+  it("reports the same days to every target with its own key", async () => {
+    const other = { key: "otv_other_key", url: "https://tv.example" };
+    await writeConfig(paths.configFile, {
+      targets: [target, other],
+      timezone: "Europe/Madrid",
+    });
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: reportFetcher(requests, 200, '{"accepted":3}'),
+      identity,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "test-host-abc-123",
+      targets: [
+        { accepted: 3, url },
+        { accepted: 3, url: other.url },
+      ],
+      warnings: [],
+    });
+    expect(requests.map((request) => request.url)).toEqual([
+      `${url}/api/report`,
+      `${other.url}/api/report`,
+    ]);
+    expect(requests.map((request) => request.init.headers)).toEqual([
+      expect.objectContaining({ Authorization: `Bearer ${key}` }),
+      expect.objectContaining({ Authorization: `Bearer ${other.key}` }),
+    ]);
+    expect(String(requests[0].init.body)).toBe(String(requests[1].init.body));
+  });
+
+  it("keeps reporting to the other targets when one is unreachable", async () => {
+    const other = { key: "otv_other_key", url: "https://tv.example" };
+    await writeConfig(paths.configFile, { targets: [target, other] });
+    const requests: Request[] = [];
+    const report = reportFetcher(requests, 200, '{"accepted":3}');
+
+    const result = await collect({
+      env: { home },
+      fetcher: async (requestUrl, init) => {
+        if (requestUrl.startsWith(url)) {
+          throw new Error("fetch failed: ECONNREFUSED 127.0.0.1:8797");
+        }
+        return report(requestUrl, init);
+      },
+      identity,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "test-host-abc-123",
+      targets: [
+        { message: "fetch failed: ECONNREFUSED 127.0.0.1:8797", url },
+        { accepted: 3, url: other.url },
+      ],
+      warnings: [],
+    });
+    expect(requests.map((request) => request.url)).toEqual([
+      `${other.url}/api/report`,
+    ]);
+  });
+
   it("reports nothing without calling tokenmax when there is no usage", async () => {
-    await writeConfig(paths.configFile, { key, url: "http://localhost:8797" });
+    await writeConfig(paths.configFile, { targets: [target] });
     const result = await collect({
       env: { home },
       fetcher: failingFetch,
@@ -476,7 +657,7 @@ describe("collect", () => {
   });
 
   it("fails with the ccusage error when the command exits", async () => {
-    await writeConfig(paths.configFile, { key, url: "http://localhost:8797" });
+    await writeConfig(paths.configFile, { targets: [target] });
     const result = await collect({
       env: { home },
       fetcher: failingFetch,
@@ -495,7 +676,9 @@ describe("collect", () => {
   });
 
   it("fails when the config is not valid json", async () => {
-    await writeConfig(paths.configFile, { key, url: "http://x.test" });
+    await writeConfig(paths.configFile, {
+      targets: [{ key, url: "http://x.test" }],
+    });
     await writeFile(paths.configFile, "{");
 
     const result = await collect({

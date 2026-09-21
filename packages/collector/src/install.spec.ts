@@ -93,13 +93,13 @@ describe("install", () => {
     expect(plan.configFile).toBe(paths.configFile);
     expect((await stat(paths.configFile)).mode & 0o777).toBe(0o600);
     expect(JSON.parse(await readFile(paths.configFile, "utf8"))).toEqual({
-      key: "tmx_secret_value",
+      targets: [{ key: "tmx_secret_value", url: "http://localhost:8797" }],
       timezone: machineZone,
-      url: "http://localhost:8797",
     });
     expect(await readFile(paths.plist, "utf8")).toBe(plistFor(home));
     expect(lines).toEqual([
       `config: ${paths.configFile} (600, key redacted)`,
+      "target: http://localhost:8797",
       `schedule: ${paths.plist}`,
       `load: launchctl bootstrap gui/501 ${paths.plist}`,
     ]);
@@ -121,10 +121,71 @@ describe("install", () => {
     });
 
     expect(JSON.parse(await readFile(paths.configFile, "utf8"))).toEqual({
-      key: "tmx_secret_value",
+      targets: [{ key: "tmx_secret_value", url: "http://localhost:8797" }],
       timezone: "Europe/Madrid",
+    });
+  });
+
+  it("adds a target for a new url and keeps the existing ones", async () => {
+    const home = await makeHome();
+    const paths = collectorPaths({ home });
+    const lines: string[] = [];
+    const base = {
+      cliPath,
+      env: { home },
+      execPath,
+      platform: "darwin" as const,
+      uid: 501,
+    };
+    await install({ ...base, key: "tmx_first", url: "http://localhost:8797" });
+
+    await install({
+      ...base,
+      key: "otv_second",
+      log: (line) => lines.push(line),
+      timezone: "Europe/Madrid",
+      url: "https://tv.example",
+    });
+
+    expect(JSON.parse(await readFile(paths.configFile, "utf8"))).toEqual({
+      targets: [
+        { key: "tmx_first", url: "http://localhost:8797" },
+        { key: "otv_second", url: "https://tv.example" },
+      ],
+      timezone: "Europe/Madrid",
+    });
+    expect(lines.slice(0, 3)).toEqual([
+      `config: ${paths.configFile} (600, key redacted)`,
+      "target: http://localhost:8797",
+      "target: https://tv.example",
+    ]);
+  });
+
+  it("replaces the key of a url already configured", async () => {
+    const home = await makeHome();
+    const paths = collectorPaths({ home });
+    const base = {
+      cliPath,
+      env: { home },
+      execPath,
+      platform: "darwin" as const,
+      uid: 501,
+    };
+    await install({ ...base, key: "tmx_first", url: "http://localhost:8797" });
+    await install({ ...base, key: "otv_second", url: "https://tv.example" });
+
+    await install({
+      ...base,
+      key: "tmx_rotated",
       url: "http://localhost:8797",
     });
+
+    expect(
+      JSON.parse(await readFile(paths.configFile, "utf8")).targets,
+    ).toEqual([
+      { key: "otv_second", url: "https://tv.example" },
+      { key: "tmx_rotated", url: "http://localhost:8797" },
+    ]);
   });
 
   it("stores the canonical spelling of a non-machine zone", async () => {
@@ -185,6 +246,7 @@ describe("install", () => {
     expect(await readFile(paths.timer, "utf8")).toBe(timerFor());
     expect(lines).toEqual([
       `config: ${paths.configFile} (600, key redacted)`,
+      "target: http://localhost:8797",
       `schedule: ${paths.service}`,
       `schedule: ${paths.timer}`,
       "load: systemctl --user enable --now tokenmax.timer",
@@ -211,6 +273,7 @@ describe("install", () => {
     expect(await readdir(home)).toEqual([]);
     expect(lines).toEqual([
       `config: ${paths.configFile} (600, key redacted)`,
+      "target: http://localhost:8797",
       `schedule: ${paths.plist}`,
       `--- ${paths.plist} ---`,
       plistFor(home).trimEnd(),
@@ -284,9 +347,8 @@ describe("install", () => {
     expect(plan.files[0]?.path).toBe(paths.plist);
     expect(await readFile(paths.plist, "utf8")).toContain(globalCliPath);
     expect(JSON.parse(await readFile(paths.configFile, "utf8"))).toEqual({
-      key: "tmx_secret_value",
+      targets: [{ key: "tmx_secret_value", url: "http://localhost:8797" }],
       timezone: machineZone,
-      url: "http://localhost:8797",
     });
   });
 

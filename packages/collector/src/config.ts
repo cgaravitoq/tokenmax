@@ -2,12 +2,25 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
 
-export const collectorConfig = z.object({
+export const collectorTarget = z.object({
   key: z.string().min(1),
-  timezone: z.string().min(1).optional(),
   url: z.url({ protocol: /^https?$/ }),
 });
 
+const timezone = z.string().min(1).optional();
+
+export const collectorConfig = z.object({
+  targets: z.array(collectorTarget).min(1),
+  timezone,
+});
+
+const singleTargetConfig = collectorTarget
+  .extend({ timezone })
+  .transform(({ key, url, ...rest }) => ({ targets: [{ key, url }], ...rest }));
+
+const storedConfig = z.union([collectorConfig, singleTargetConfig]);
+
+export type CollectorTarget = z.infer<typeof collectorTarget>;
 export type CollectorConfig = z.infer<typeof collectorConfig>;
 
 export function canonicalTimezone(value: string): string | null {
@@ -62,7 +75,7 @@ export async function readConfig(
     };
   }
 
-  const parsed = collectorConfig.safeParse(payload);
+  const parsed = storedConfig.safeParse(payload);
   if (!parsed.success) {
     return {
       kind: "invalid",

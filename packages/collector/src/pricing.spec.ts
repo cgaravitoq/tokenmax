@@ -20,6 +20,7 @@ import {
 
 const sample = JSON.stringify({
   "gemini-3.8-flash": {
+    cache_creation_input_token_cost: 1.25e-6,
     cache_read_input_token_cost: 7.5e-8,
     input_cost_per_token: 7.5e-7,
     litellm_provider: "gemini",
@@ -69,21 +70,43 @@ describe("parseLitellmPrices", () => {
       "gemini/gemini-3.8-flash",
     ]);
     expect(table.get("gemini-3.8-flash")).toEqual({
+      cacheCreate: 1.25e-6,
       cacheRead: 7.5e-8,
       input: 7.5e-7,
       output: 3.75e-6,
     });
-    expect(table.get("gemini/gemini-3.8-flash")?.cacheRead).toBe(0);
+    expect(table.get("gemini/gemini-3.8-flash")).toEqual({
+      cacheCreate: 0,
+      cacheRead: 0,
+      input: 7.5e-7,
+      output: 3.75e-6,
+    });
   });
 });
 
 describe("costOf", () => {
-  it("prices the three token kinds", () => {
-    const price = { cacheRead: 7.5e-8, input: 7.5e-7, output: 3.75e-6 };
+  const price = {
+    cacheCreate: 1.25e-6,
+    cacheRead: 7.5e-8,
+    input: 7.5e-7,
+    output: 3.75e-6,
+  };
 
+  it("prices the three token kinds", () => {
     expect(costOf(price, { cacheRead: 8144, input: 1392, output: 133 })).toBe(
       1392 * 7.5e-7 + 133 * 3.75e-6 + 8144 * 7.5e-8,
     );
+  });
+
+  it("prices the cache creation tokens when the usage has them", () => {
+    expect(
+      costOf(price, {
+        cacheCreate: 17366,
+        cacheRead: 8144,
+        input: 2,
+        output: 5,
+      }),
+    ).toBe(2 * 7.5e-7 + 5 * 3.75e-6 + 8144 * 7.5e-8 + 17366 * 1.25e-6);
   });
 });
 

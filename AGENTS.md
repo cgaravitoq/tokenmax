@@ -20,6 +20,7 @@ tokenmax/
 - Vitest 4.1 runs the workspace specs, and `bun test` runs the dependency policy and workflow golden tests under `scripts/`.
 - The collector spawns ccusage 20.0.20, pinned exact because it reads an undocumented JSON shape through a per-platform native binary.
 - The collector also decodes the Antigravity CLI conversations under `~/.gemini/antigravity-cli/conversations` itself, because ccusage has no adapter for them: each model step is a protobuf in SQLite, read through `node:sqlite`, priced from the LiteLLM table cached for a day at `~/.config/tokenmax/litellm-prices.json`, and reported as the `antigravity` provider.
+- The collector reads the Devin CLI transcripts under `~/.local/share/devin/cli/transcripts` for the same reason: each agent step of an ATIF JSON carries `metrics.prompt_tokens`, `completion_tokens`, `cached_tokens` and `extra.cache_creation_input_tokens`, the uncached input is the prompt minus both caches, the effort suffix of `model_name` collapses into the LiteLLM name (`claude-fable-5-1-xhigh` to `claude-fable-5-1`, `gpt-5-6-sol-high` to `gpt-5.6-sol`), and the rows are reported as the `devin` provider.
 - The worker will be Astro 7 with the Cloudflare adapter, a Hono 4 API, a Vue 3 key page and D1.
 
 ## Conventions
@@ -66,8 +67,10 @@ The privacy page renders the four `PRIVACY_*` secrets, so every instance carries
 The collector is `packages/collector`, npm name `tokenmax-collector`, bin `tokenmax`, and requires Bun 1.4.0 or newer because `src/cli.ts` runs as TypeScript and reads SQLite through `node:sqlite`.
 Install it with `bun add -g tokenmax-collector`, then run `tokenmax install --url <url> --key <key>` with optional `--timezone <zone>`.
 Use the global package for scheduling; non-dry `install` rejects Bun's `/install/cache/` and `bunx-<digits>-<package>` paths, while `--dry-run` can still print their plans.
-By default it reads `~/.config/tokenmax/config.json`, with `TOKENMAX_HOME` and `XDG_CONFIG_HOME` able to change that location, and sends the report to `POST /api/report`.
-`install` writes that config plus a launchd agent on macOS or a systemd user timer on Linux, and Windows is unsupported.
+By default it reads `~/.config/tokenmax/config.json`, with `TOKENMAX_HOME` and `XDG_CONFIG_HOME` able to change that location, and sends the report to `POST /api/report` of every target in it.
+The config is `{ targets: [{ url, key }], timezone? }`; the single-target `{ url, key, timezone? }` shape written before targets existed still reads.
+`install` adds the target for a new url, replaces the key of a url already configured and keeps the rest, then writes that config plus a launchd agent on macOS or a systemd user timer on Linux, and Windows is unsupported.
+`collect` prints one `accepted <n> days for <machine> at <url>` line per target and exits 1 when any target rejects the report.
 Upgrade with `bun add -g tokenmax-collector@latest`, then run `tokenmax install --url <url> --key <existing-key>` again.
 On macOS, run `launchctl bootout gui/<uid>/dev.tokenmax.collector`, then run the printed `launchctl bootstrap` command.
 On Linux, run `systemctl --user daemon-reload`, then run the printed `systemctl --user enable --now tokenmax.timer` command.

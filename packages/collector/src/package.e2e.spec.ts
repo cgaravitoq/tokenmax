@@ -191,9 +191,10 @@ it("installs and runs the packed package", async () => {
     expect(packListing).toContain("src/cli.ts");
     expect(packListing).toContain("src/install.ts");
     expect(packListing).toContain("src/antigravity.ts");
+    expect(packListing).toContain("src/devin.ts");
     expect(packListing).not.toContain(".spec.ts");
     expect(packListing).not.toContain("src/test/");
-    expect(packListing).toContain("Total files: 16");
+    expect(packListing).toContain("Total files: 17");
 
     await runChild("bun", ["add", "-g", tarball], temporaryDirectory, env);
     expect(await realpath(tokenmax)).toContain(
