@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Fetcher } from "./http";
 
 export interface ModelPrice {
+  cacheCreate: number;
   cacheRead: number;
   input: number;
   output: number;
@@ -12,6 +13,7 @@ export interface ModelPrice {
 export type PriceTable = Map<string, ModelPrice>;
 
 export interface PricedUsage {
+  cacheCreate?: number;
   cacheRead: number;
   input: number;
   output: number;
@@ -23,6 +25,7 @@ export const litellmPricesUrl =
 const maxAgeMs = 24 * 60 * 60 * 1000;
 
 const pricedEntry = z.object({
+  cache_creation_input_token_cost: z.number().optional(),
   cache_read_input_token_cost: z.number().optional(),
   input_cost_per_token: z.number(),
   output_cost_per_token: z.number(),
@@ -38,6 +41,7 @@ export function parseLitellmPrices(source: string): PriceTable {
     const priced = pricedEntry.safeParse(entry);
     if (priced.success) {
       table.set(model, {
+        cacheCreate: priced.data.cache_creation_input_token_cost ?? 0,
         cacheRead: priced.data.cache_read_input_token_cost ?? 0,
         input: priced.data.input_cost_per_token,
         output: priced.data.output_cost_per_token,
@@ -51,7 +55,8 @@ export function costOf(price: ModelPrice, usage: PricedUsage): number {
   return (
     usage.input * price.input +
     usage.output * price.output +
-    usage.cacheRead * price.cacheRead
+    usage.cacheRead * price.cacheRead +
+    (usage.cacheCreate ?? 0) * price.cacheCreate
   );
 }
 

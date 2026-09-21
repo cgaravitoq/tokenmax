@@ -77,8 +77,13 @@ describe("mapCcusageDays", () => {
 });
 
 describe("mapAntigravitySteps", () => {
-  const flash = { cacheRead: 7.5e-8, input: 7.5e-7, output: 3.75e-6 };
-  const previous = { cacheRead: 0, input: 5e-7, output: 3e-6 };
+  const flash = {
+    cacheCreate: 0,
+    cacheRead: 7.5e-8,
+    input: 7.5e-7,
+    output: 3.75e-6,
+  };
+  const previous = { cacheCreate: 0, cacheRead: 0, input: 5e-7, output: 3e-6 };
   const prices = new Map([
     ["gemini-3.8-flash", flash],
     ["gemini/gemini-3.7-flash", previous],
