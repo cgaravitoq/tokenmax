@@ -48,7 +48,10 @@ tokenmax install --url <url> --key <key>
 Pass `--timezone <zone>` to `install` to override the machine's IANA timezone.
 Non-dry `tokenmax install` refuses Bun paths containing `/install/cache/` or a `bunx-<digits>-<package>` directory segment because those paths can disappear while a schedule still points to them.
 Run `tokenmax collect` to report the last 14 calendar days immediately.
-The rows come from ccusage for every agent it detects, plus the Antigravity CLI conversations under `~/.gemini/antigravity-cli`, which the collector decodes itself and prices from the LiteLLM table it caches for a day at `~/.config/tokenmax/litellm-prices.json`.
+The rows come from ccusage for every agent it detects, plus two sources ccusage has no adapter for, which the collector decodes itself and prices from the LiteLLM table it caches for a day at `~/.config/tokenmax/litellm-prices.json`: the Antigravity CLI conversations under `~/.gemini/antigravity-cli`, reported as `antigravity`, and the Devin CLI transcripts under `~/.local/share/devin/cli/transcripts`, reported as `devin` with the effort suffix of each model collapsed into its LiteLLM name.
+
+The config holds a list of targets, each with its own url and key, and `collect` posts the same report to every one of them.
+Running `tokenmax install` with a new url adds a target and keeps the existing ones, and running it again with a configured url replaces that target's key, so one machine can feed a personal instance and a team board at once.
 
 A collector release is a version bump merged to `main` followed by a `collector-v<version>` tag on that commit; the `release` workflow publishes the package to npm with provenance and creates the GitHub release.
 
