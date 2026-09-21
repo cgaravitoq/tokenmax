@@ -1,6 +1,6 @@
 import type { AntigravityStep } from "./antigravity";
 import { type CcusageDaily, calendarDate } from "./ccusage";
-import { costOf, type PriceTable } from "./pricing";
+import { costOf, type ModelPrice, type PriceTable } from "./pricing";
 import type { UsageDay } from "./usage";
 
 export const antigravityProvider = "antigravity";
@@ -53,23 +53,33 @@ export function mapCcusageDays(output: CcusageDaily): UsageDay[] {
   return sortedRows(rows);
 }
 
-export function mapAntigravitySteps(
-  steps: AntigravityStep[],
+interface LocalStep {
+  at: Date;
+  cacheCreate?: number;
+  cacheRead: number;
+  input: number;
+  model: string;
+  output: number;
+}
+
+function mapLocalSteps(
+  steps: LocalStep[],
+  provider: string,
   timezone: string,
-  prices: PriceTable,
+  priceOf: (model: string) => ModelPrice | undefined,
 ): UsageDay[] {
   const rows = new Map<string, UsageDay>();
 
   for (const step of steps) {
     const row: UsageDay = {
-      cache_create: 0,
+      cache_create: step.cacheCreate ?? 0,
       cache_read: step.cacheRead,
       cost_usd: 0,
       date: calendarDate(step.at, timezone),
       input: step.input,
       model: step.model,
       output: step.output,
-      provider: antigravityProvider,
+      provider,
     };
     if (isEmptyRow(row)) {
       continue;
@@ -80,17 +90,19 @@ export function mapAntigravitySteps(
       rows.set(key, row);
       continue;
     }
+    existing.cache_create += row.cache_create;
     existing.cache_read += row.cache_read;
     existing.input += row.input;
     existing.output += row.output;
   }
 
   for (const row of rows.values()) {
-    const price = prices.get(row.model) ?? prices.get(`gemini/${row.model}`);
+    const price = priceOf(row.model);
     row.cost_usd =
       price === undefined
         ? 0
         : costOf(price, {
+            cacheCreate: row.cache_create,
             cacheRead: row.cache_read,
             input: row.input,
             output: row.output,
@@ -98,6 +110,19 @@ export function mapAntigravitySteps(
   }
 
   return sortedRows(rows);
+}
+
+export function mapAntigravitySteps(
+  steps: AntigravityStep[],
+  timezone: string,
+  prices: PriceTable,
+): UsageDay[] {
+  return mapLocalSteps(
+    steps,
+    antigravityProvider,
+    timezone,
+    (model) => prices.get(model) ?? prices.get(`gemini/${model}`),
+  );
 }
 
 function sortedRows(rows: Map<string, UsageDay>): UsageDay[] {
