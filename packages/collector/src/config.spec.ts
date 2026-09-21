@@ -1,0 +1,98 @@
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { readConfig, writeConfig } from "./config";
+
+let dir: string;
+let configFile: string;
+
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), "tokenmax-config-"));
+  await mkdir(join(dir, "tokenmax"));
+  configFile = join(dir, "tokenmax", "config.json");
+});
+
+afterEach(async () => {
+  await rm(dir, { force: true, recursive: true });
+});
+
+describe("readConfig", () => {
+  it("reads the targets the collector reports to", async () => {
+    await writeConfig(configFile, {
+      targets: [
+        { key: "tmx_a", url: "https://tokenmax.example" },
+        { key: "otv_b", url: "https://tv.example" },
+      ],
+      timezone: "Europe/Madrid",
+    });
+
+    expect(await readConfig(configFile)).toEqual({
+      config: {
+        targets: [
+          { key: "tmx_a", url: "https://tokenmax.example" },
+          { key: "otv_b", url: "https://tv.example" },
+        ],
+        timezone: "Europe/Madrid",
+      },
+      kind: "ok",
+    });
+  });
+
+  it("reads a single-target config written before targets existed", async () => {
+    await writeFile(
+      configFile,
+      JSON.stringify({
+        key: "tmx_a",
+        timezone: "Europe/Madrid",
+        url: "https://tokenmax.example",
+      }),
+    );
+
+    expect(await readConfig(configFile)).toEqual({
+      config: {
+        targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
+        timezone: "Europe/Madrid",
+      },
+      kind: "ok",
+    });
+  });
+
+  it("rejects a config without targets", async () => {
+    await writeFile(configFile, JSON.stringify({ targets: [] }));
+
+    expect(await readConfig(configFile)).toMatchObject({
+      kind: "invalid",
+      message: expect.stringContaining(
+        `invalid tokenmax config at ${configFile}`,
+      ),
+    });
+  });
+
+  it("rejects a target without a key", async () => {
+    await writeFile(
+      configFile,
+      JSON.stringify({
+        targets: [{ key: "", url: "https://tokenmax.example" }],
+      }),
+    );
+
+    expect(await readConfig(configFile)).toMatchObject({ kind: "invalid" });
+  });
+
+  it("is missing when there is no file", async () => {
+    expect(await readConfig(configFile)).toEqual({ kind: "missing" });
+  });
+});
+
+describe("writeConfig", () => {
+  it("writes the targets shape", async () => {
+    await writeConfig(configFile, {
+      targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
+    });
+
+    expect(JSON.parse(await readFile(configFile, "utf8"))).toEqual({
+      targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
+    });
+  });
+});

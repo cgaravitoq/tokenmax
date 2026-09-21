@@ -40,12 +40,22 @@ async function runCollect(io: CliIo): Promise<number> {
     for (const warning of result.warnings) {
       io.stderr(warning);
     }
-    io.stdout(
-      result.kind === "reported"
-        ? `accepted ${result.accepted} days for ${result.machine}`
-        : "nothing to report",
-    );
-    return 0;
+    if (result.kind === "empty") {
+      io.stdout("nothing to report");
+      return 0;
+    }
+    let exitCode = 0;
+    for (const target of result.targets) {
+      if ("accepted" in target) {
+        io.stdout(
+          `accepted ${target.accepted} days for ${result.machine} at ${target.url}`,
+        );
+      } else {
+        io.stderr(`${target.url}: ${target.message}`);
+        exitCode = 1;
+      }
+    }
+    return exitCode;
   }
   if (result.kind === "missing-config") {
     io.stderr(

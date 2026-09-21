@@ -105,9 +105,8 @@ describe("cli entry", () => {
     expect(result.stderr).toBe("");
     expect((await stat(paths.configFile)).mode & 0o777).toBe(0o600);
     expect(JSON.parse(await readFile(paths.configFile, "utf8"))).toEqual({
-      key,
+      targets: [{ key, url }],
       timezone: "Europe/Madrid",
-      url,
     });
     const schedule =
       process.platform === "darwin"

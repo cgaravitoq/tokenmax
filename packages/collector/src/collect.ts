@@ -10,7 +10,7 @@ import {
   windowStart,
 } from "./ccusage";
 import { type CommandRunner, runCommand } from "./command";
-import { readConfig, runtimeTimezone } from "./config";
+import { type CollectorTarget, readConfig, runtimeTimezone } from "./config";
 import { type DevinStep, devinTranscriptsDir, readDevinSteps } from "./devin";
 import type { Fetcher } from "./http";
 import { type MachineIdentity, machineId } from "./machine";
@@ -34,8 +34,17 @@ export interface CollectOptions {
   timezone?: string;
 }
 
+export type TargetResult =
+  | { accepted: number; url: string }
+  | { message: string; url: string };
+
 export type CollectResult =
-  | { kind: "reported"; accepted: number; machine: string; warnings: string[] }
+  | {
+      kind: "reported";
+      machine: string;
+      targets: TargetResult[];
+      warnings: string[];
+    }
   | { kind: "empty"; warnings: string[] }
   | { kind: "missing-config"; configFile: string }
   | { kind: "failed"; message: string };
@@ -98,34 +107,37 @@ const devinSource: LocalSource<DevinStep> = {
 
 async function report(
   fetcher: Fetcher,
-  url: string,
-  key: string,
-  usage: UsageReport,
-  warnings: string[],
-): Promise<CollectResult> {
-  const response = await fetcher(reportUrl(url), {
-    body: JSON.stringify(usage),
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
-  const body = await response.text();
-  if (response.status !== 200) {
-    return {
-      kind: "failed",
-      message: `tokenmax responded ${response.status}: ${body}`,
-    };
+  target: CollectorTarget,
+  body: string,
+): Promise<TargetResult> {
+  const { url } = target;
+  try {
+    const response = await fetcher(reportUrl(url), {
+      body,
+      headers: {
+        Authorization: `Bearer ${target.key}`,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+    const answer = await response.text();
+    if (response.status !== 200) {
+      return {
+        message: `tokenmax responded ${response.status}: ${answer}`,
+        url,
+      };
+    }
+    const accepted = acceptedCount(answer);
+    if (accepted === null) {
+      return {
+        message: `tokenmax responded an unexpected body: ${answer}`,
+        url,
+      };
+    }
+    return { accepted, url };
+  } catch (error) {
+    return { message: messageOf(error), url };
   }
-  const accepted = acceptedCount(body);
-  if (accepted === null) {
-    return {
-      kind: "failed",
-      message: `tokenmax responded an unexpected body: ${body}`,
-    };
-  }
-  return { accepted, kind: "reported", machine: usage.machine, warnings };
 }
 
 async function localDays<Step extends { at: Date }>(
@@ -206,15 +218,11 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
     return { kind: "empty", warnings };
   }
 
-  try {
-    return await report(
-      fetcher,
-      config.config.url,
-      config.config.key,
-      { days, machine, timezone },
-      warnings,
-    );
-  } catch (error) {
-    return { kind: "failed", message: messageOf(error) };
+  const usage: UsageReport = { days, machine, timezone };
+  const body = JSON.stringify(usage);
+  const targets: TargetResult[] = [];
+  for (const target of config.config.targets) {
+    targets.push(await report(fetcher, target, body));
   }
+  return { kind: "reported", machine, targets, warnings };
 }
