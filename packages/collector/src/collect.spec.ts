@@ -8,10 +8,12 @@ import { sinceArgument } from "./ccusage";
 import { type CollectResult, collect } from "./collect";
 import type { CommandRunner } from "./command";
 import { writeConfig } from "./config";
+import { devinTranscriptsDir } from "./devin";
 import type { Fetcher } from "./http";
 import { type CollectorPaths, collectorPaths } from "./paths";
 import { litellmPricesUrl } from "./pricing";
 import { writeConversation } from "./test/antigravity-fixture";
+import { writeTranscript } from "./test/devin-fixture";
 import type { UsageDay } from "./usage";
 
 const isCalendarDate = (value: string): boolean => {
@@ -123,6 +125,12 @@ const reportFetcher = (
 };
 
 const litellmPrices = JSON.stringify({
+  "claude-fable-5-1": {
+    cache_creation_input_token_cost: 1.25e-5,
+    cache_read_input_token_cost: 2.5e-7,
+    input_cost_per_token: 1e-5,
+    output_cost_per_token: 5e-5,
+  },
   "gemini-3.8-flash": {
     cache_read_input_token_cost: 7.5e-8,
     input_cost_per_token: 7.5e-7,
@@ -326,6 +334,105 @@ describe("collect", () => {
         provider: "antigravity",
       },
     ]);
+  });
+
+  it("adds the Devin steps of the window as their own provider", async () => {
+    await writeConfig(paths.configFile, {
+      key,
+      timezone: "Europe/Madrid",
+      url: "http://localhost:8797",
+    });
+    const transcripts = devinTranscriptsDir(home);
+    await mkdir(transcripts, { recursive: true });
+    writeTranscript(join(transcripts, "abiding-hall.json"), [
+      {
+        at: new Date("2026-08-28T21:00:00.000Z"),
+        model: "claude-fable-5-1-high",
+        output: 999,
+        prompt: 999,
+      },
+      {
+        at: new Date("2026-09-09T22:30:00.000Z"),
+        cacheCreate: 17366,
+        cacheRead: 12510,
+        model: "claude-fable-5-1-xhigh",
+        output: 223,
+        prompt: 29878,
+      },
+    ]);
+    const requests: Request[] = [];
+    const priceCalls: string[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":4}'),
+        priceCalls,
+      ),
+      identity,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      accepted: 4,
+      kind: "reported",
+      machine: "test-host-abc-123",
+      warnings: [],
+    });
+    expect(priceCalls).toEqual([litellmPricesUrl]);
+    expect(JSON.parse(String(requests[0].init.body)).days).toEqual([
+      ...expectedDays,
+      {
+        cache_create: 17366,
+        cache_read: 12510,
+        cost_usd: 2 * 1e-5 + 223 * 5e-5 + 12510 * 2.5e-7 + 17366 * 1.25e-5,
+        date: "2026-09-10",
+        input: 2,
+        model: "claude-fable-5-1",
+        output: 223,
+        provider: "devin",
+      },
+    ]);
+  });
+
+  it("reports around a transcript it cannot read and names it", async () => {
+    await writeConfig(paths.configFile, { key, url: "http://localhost:8797" });
+    const transcripts = devinTranscriptsDir(home);
+    await mkdir(transcripts, { recursive: true });
+    await writeFile(join(transcripts, "broken.json"), "{");
+    writeTranscript(join(transcripts, "ok.json"), [
+      {
+        at: new Date("2026-09-10T12:00:00.000Z"),
+        model: "swe-2-medium",
+        output: 10,
+        prompt: 10,
+      },
+    ]);
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":4}'),
+        [],
+      ),
+      identity,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      accepted: 4,
+      kind: "reported",
+      machine: "test-host-abc-123",
+      warnings: [
+        expect.stringMatching(
+          new RegExp(`^devin: skipped ${join(transcripts, "broken.json")}: `),
+        ),
+      ],
+    });
+    expect(JSON.parse(String(requests[0].init.body)).days).toHaveLength(4);
   });
 
   it("leaves the prices alone when no Antigravity step is in the window", async () => {

@@ -1,11 +1,18 @@
 import type { AntigravityStep } from "./antigravity";
 import { type CcusageDaily, calendarDate } from "./ccusage";
+import type { DevinStep } from "./devin";
 import { costOf, type ModelPrice, type PriceTable } from "./pricing";
 import type { UsageDay } from "./usage";
 
 export const antigravityProvider = "antigravity";
+export const devinProvider = "devin";
 
 const agentModelPrefix = /^\[[^\]]*\]\s*/;
+const effortSuffix = /-(low|medium|high|xhigh)$/;
+const gptMinorVersion = /^gpt-(\d+)-(\d+)-/;
+
+const litellmModel = (devinModel: string): string =>
+  devinModel.replace(effortSuffix, "").replace(gptMinorVersion, "gpt-$1.$2-");
 
 const rowKey = (day: UsageDay): string =>
   `${day.date}\u0000${day.provider}\u0000${day.model}`;
@@ -122,6 +129,19 @@ export function mapAntigravitySteps(
     antigravityProvider,
     timezone,
     (model) => prices.get(model) ?? prices.get(`gemini/${model}`),
+  );
+}
+
+export function mapDevinSteps(
+  steps: DevinStep[],
+  timezone: string,
+  prices: PriceTable,
+): UsageDay[] {
+  return mapLocalSteps(
+    steps.map((step) => ({ ...step, model: litellmModel(step.model) })),
+    devinProvider,
+    timezone,
+    (model) => prices.get(model),
   );
 }
 

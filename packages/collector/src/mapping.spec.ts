@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import type { AntigravityStep } from "./antigravity";
 import { parseCcusageDaily } from "./ccusage";
-import { mapAntigravitySteps, mapCcusageDays } from "./mapping";
+import type { DevinStep } from "./devin";
+import { mapAntigravitySteps, mapCcusageDays, mapDevinSteps } from "./mapping";
 import { costOf } from "./pricing";
 import type { UsageDay } from "./usage";
 
@@ -181,6 +182,100 @@ describe("mapAntigravitySteps", () => {
       ["2026-09-13", "gemini-3.7-flash", 50],
       ["2026-09-13", "gemini-3.8-flash", 9636],
       ["2026-09-13", "gemini-unknown", 204],
+    ]);
+  });
+});
+
+describe("mapDevinSteps", () => {
+  const fable = {
+    cacheCreate: 1.25e-5,
+    cacheRead: 2.5e-7,
+    input: 1e-5,
+    output: 5e-5,
+  };
+  const sol = { cacheCreate: 5e-6, cacheRead: 4e-7, input: 4e-6, output: 2e-5 };
+  const prices = new Map([
+    ["claude-fable-5-1", fable],
+    ["gpt-5.6-sol", sol],
+  ]);
+  const at = new Date("2026-09-19T16:01:31.208Z");
+  const steps: DevinStep[] = [
+    {
+      at,
+      cacheCreate: 1100211,
+      cacheRead: 55834239,
+      input: 772,
+      model: "claude-fable-5-1-high",
+      output: 245921,
+    },
+    {
+      at,
+      cacheCreate: 2552197,
+      cacheRead: 64854071,
+      input: 672,
+      model: "claude-fable-5-1-xhigh",
+      output: 270203,
+    },
+    {
+      at,
+      cacheCreate: 24494,
+      cacheRead: 0,
+      input: 3,
+      model: "gpt-5-6-sol-high",
+      output: 114,
+    },
+    {
+      at,
+      cacheCreate: 0,
+      cacheRead: 0,
+      input: 17615,
+      model: "swe-2-medium",
+      output: 48,
+    },
+  ];
+
+  it("collapses the effort levels of a model into its LiteLLM name and prices it", () => {
+    expect(mapDevinSteps(steps, "Europe/Madrid", prices)).toEqual([
+      {
+        cache_create: 3652408,
+        cache_read: 120688310,
+        cost_usd: costOf(fable, {
+          cacheCreate: 3652408,
+          cacheRead: 120688310,
+          input: 1444,
+          output: 516124,
+        }),
+        date: "2026-09-19",
+        input: 1444,
+        model: "claude-fable-5-1",
+        output: 516124,
+        provider: "devin",
+      },
+      {
+        cache_create: 24494,
+        cache_read: 0,
+        cost_usd: costOf(sol, {
+          cacheCreate: 24494,
+          cacheRead: 0,
+          input: 3,
+          output: 114,
+        }),
+        date: "2026-09-19",
+        input: 3,
+        model: "gpt-5.6-sol",
+        output: 114,
+        provider: "devin",
+      },
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 0,
+        date: "2026-09-19",
+        input: 17615,
+        model: "swe-2",
+        output: 48,
+        provider: "devin",
+      },
     ]);
   });
 });
