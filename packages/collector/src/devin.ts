@@ -39,6 +39,7 @@ const step = z.object({
   metrics: metrics.optional(),
   model_name: z.string().optional(),
   source: z.string(),
+  step_id: z.int().optional(),
   timestamp: z.iso.datetime({ offset: true }),
 });
 
@@ -53,28 +54,36 @@ export function devinTranscriptsDir(home: string): string {
   return resolve(home, ".local", "share", "devin", "cli", "transcripts");
 }
 
-function parseTranscript(source: string): DevinStep[] {
+function parseTranscript(source: string): ReaderSteps<DevinStep> {
   const parsed = transcript.safeParse(JSON.parse(source));
   if (!parsed.success) {
     throw new Error(issueText(parsed.error));
   }
   const steps: DevinStep[] = [];
+  const failures: string[] = [];
   for (const entry of parsed.data.steps) {
     if (entry.source !== "agent" || entry.metrics === undefined) {
       continue;
     }
     const cacheRead = entry.metrics.cached_tokens ?? 0;
     const cacheCreate = entry.metrics.extra?.cache_creation_input_tokens ?? 0;
+    const input = entry.metrics.prompt_tokens - cacheRead - cacheCreate;
+    if (input < 0) {
+      failures.push(
+        `step ${entry.step_id ?? "?"} reports more cached than prompt tokens`,
+      );
+      continue;
+    }
     steps.push({
       at: new Date(entry.timestamp),
       cacheCreate,
       cacheRead,
-      input: entry.metrics.prompt_tokens - cacheRead - cacheCreate,
+      input,
       model: entry.model_name ?? unknownModel,
       output: entry.metrics.completion_tokens,
     });
   }
-  return steps;
+  return { failures, steps };
 }
 
 export async function readDirectorySteps<Step>(
@@ -109,8 +118,7 @@ export async function readDirectorySteps<Step>(
 }
 
 export async function readDevinSteps(dir: string): Promise<DevinUsage> {
-  return readDirectorySteps(dir, ".json", async (file) => ({
-    failures: [],
-    steps: parseTranscript(await readFile(file, "utf8")),
-  }));
+  return readDirectorySteps(dir, ".json", async (file) =>
+    parseTranscript(await readFile(file, "utf8")),
+  );
 }

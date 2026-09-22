@@ -83,6 +83,36 @@ describe("readDevinSteps", () => {
     ]);
   });
 
+  it("skips a step that reports more cached than prompt tokens", async () => {
+    writeTranscript(join(dir, "a.json"), [
+      {
+        at: new Date(0),
+        cacheCreate: 2000,
+        cacheRead: 5000,
+        model: "claude-opus-5-high",
+        output: 7,
+        prompt: 1000,
+      },
+      { at: new Date(0), model: "swe-2-medium", output: 1, prompt: 1 },
+    ]);
+
+    const usage = await readDevinSteps(dir);
+
+    expect(usage.steps).toEqual([
+      {
+        at: new Date(0),
+        cacheCreate: 0,
+        cacheRead: 0,
+        input: 1,
+        model: "swe-2-medium",
+        output: 1,
+      },
+    ]);
+    expect(usage.failures).toEqual([
+      `${join(dir, "a.json")}: step 3 reports more cached than prompt tokens`,
+    ]);
+  });
+
   it("skips a transcript it cannot decode and keeps the others", async () => {
     writeTranscript(join(dir, "a.json"), [
       { at: new Date(0), model: "swe-2-medium", output: 1, prompt: 1 },
