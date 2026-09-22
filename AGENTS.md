@@ -73,7 +73,7 @@ By default it reads `~/.config/tokenmax/config.json`, with `TOKENMAX_HOME` and `
 The config is `{ targets: [{ url, key }], timezone? }`; the single-target `{ url, key, timezone? }` shape written before targets existed still reads.
 `install` adds the target for a new url, replaces the key of a url already configured and keeps the rest, then writes that config plus a launchd agent on macOS or a systemd user timer on Linux, and Windows is unsupported.
 `collect` reports the last 14 calendar days to `/api/report` and prints one `accepted <n> days for <machine> at <url>` line per target, where `<n>` is the number of usage rows the instance stored and not a count of calendar days; it exits 1 when any target rejects the report.
-The machine is identified by its platform uuid on macOS or its `/etc/machine-id` on Linux, never by the hostname, which changes with the network; the worker also reads that identifier out of the reports an older collector sends with the hostname in front of it.
+The machine is identified by its platform uuid on macOS or its `/etc/machine-id` on Linux, and by the hostname, which changes with the network, when the platform identifier cannot be read; the worker also reads that identifier out of the reports an older collector sends with the hostname in front of it.
 Upgrade and schedule commands are in `README.md`.
 
 ## Keys
