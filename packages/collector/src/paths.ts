@@ -39,6 +39,12 @@ function logDirFor(env: CollectorEnv, home: string): string {
   return resolve(home, ".local", "state", "tokenmax", "logs");
 }
 
+export function systemdUserUnitDir(env: CollectorEnv): string {
+  return env.xdgConfigHome === undefined
+    ? resolve(env.home, ".config", "systemd", "user")
+    : resolve(env.xdgConfigHome, "systemd", "user");
+}
+
 export function collectorPaths(env: CollectorEnv): CollectorPaths {
   const home = resolve(env.tokenmaxHome ?? env.home);
   const configHome =

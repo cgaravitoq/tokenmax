@@ -10,7 +10,12 @@ import {
   runtimeTimezone,
   writeConfig,
 } from "./config";
-import { type CollectorEnv, collectorPaths, processEnv } from "./paths";
+import {
+  type CollectorEnv,
+  collectorPaths,
+  processEnv,
+  systemdUserUnitDir,
+} from "./paths";
 import {
   launchAgentPlist,
   loadCommand,
@@ -128,6 +133,15 @@ export async function install(options: InstallOptions): Promise<InstallPlan> {
   }
   for (const file of plan.files) {
     log(`schedule: ${file.path}`);
+  }
+  if (platform === "linux") {
+    const unitDir = dirname(paths.service);
+    const systemdDir = systemdUserUnitDir(env);
+    if (unitDir !== systemdDir) {
+      log(
+        `warning: systemd will not read units from ${unitDir}; it reads them from ${systemdDir}`,
+      );
+    }
   }
 
   if (options.dryRun === true) {

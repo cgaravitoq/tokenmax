@@ -367,6 +367,27 @@ describe("install", () => {
     );
   });
 
+  it("warns when the unit lands outside the systemd load path", async () => {
+    const home = await makeHome();
+    const tokenmaxHome = join(home, "tmhome");
+    const lines: string[] = [];
+
+    await install({
+      cliPath,
+      dryRun: true,
+      env: { home, tokenmaxHome },
+      execPath,
+      key: "tmx_secret_value",
+      log: (line) => lines.push(line),
+      platform: "linux",
+      url: "http://localhost:8797",
+    });
+
+    expect(lines).toContain(
+      `warning: systemd will not read units from ${tokenmaxHome}/.config/systemd/user; it reads them from ${home}/.config/systemd/user`,
+    );
+  });
+
   it("escapes the metacharacters of a scheduled path in the plist and the unit", async () => {
     const home = await makeHome("tokenmax-esc-&<>-");
     const nastyExecPath = String.raw`/opt/bun & <> % $ " \n/bin/bun`;
