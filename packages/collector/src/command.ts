@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 
 export interface CommandResult {
   exitCode: number;
@@ -18,13 +18,27 @@ const maxOutputBytes = 8 * 1024 * 1024;
 const toText = (chunks: Buffer[]): string =>
   Buffer.concat(chunks).toString("utf8");
 
+function killGroup(child: ChildProcess): void {
+  if (child.pid === undefined) {
+    return;
+  }
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    child.kill("SIGKILL");
+  }
+}
+
 export function runCommand(
   command: string,
   args: string[],
   timeoutMs = defaultTimeoutMs,
 ): Promise<CommandResult> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let outputBytes = 0;
@@ -46,7 +60,7 @@ export function runCommand(
       }
       outputBytes += chunk.length;
       if (outputBytes > maxOutputBytes) {
-        child.kill("SIGKILL");
+        killGroup(child);
         finish({
           exitCode: 1,
           stderr: `output exceeded ${maxOutputBytes} bytes`,
@@ -57,7 +71,7 @@ export function runCommand(
       chunks.push(chunk);
     };
     timer = setTimeout(() => {
-      child.kill("SIGKILL");
+      killGroup(child);
       finish({
         exitCode: 1,
         stderr: `timed out after ${timeoutMs}ms`,
