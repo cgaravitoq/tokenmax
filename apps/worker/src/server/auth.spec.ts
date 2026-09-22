@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { app } from "@/server/app";
-import { rotateApiKey } from "@/server/auth";
+import { rotateApiKey, signInRevokeSql } from "@/server/auth";
 import { hashApiKey } from "@/server/usage";
 import { createSqliteD1, type SqliteD1TestDatabase } from "@/test/sqlite-d1";
 
@@ -712,7 +712,7 @@ describe("the api_keys user_id index", () => {
   it("serves the sign-in revocation", () => {
     const sqlite = database();
     const plan = sqlite.query<{ detail: string }>(
-      "EXPLAIN QUERY PLAN UPDATE api_keys SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT id FROM users WHERE github_login = ?) AND revoked_at IS NULL",
+      `EXPLAIN QUERY PLAN ${signInRevokeSql}`,
       "octocat",
     );
 

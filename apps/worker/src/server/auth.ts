@@ -2,6 +2,9 @@ const keyPrefix = "tmx_";
 
 const randomBytes = 32;
 
+export const signInRevokeSql =
+  "UPDATE api_keys SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT id FROM users WHERE github_login = ?) AND revoked_at IS NULL";
+
 function randomHex(bytes: number): string {
   const buffer = new Uint8Array(bytes);
   crypto.getRandomValues(buffer);
@@ -29,11 +32,7 @@ export async function registerLogin(
         "INSERT INTO users (github_login, avatar_url) VALUES (?, ?) ON CONFLICT(github_login) DO UPDATE SET avatar_url = excluded.avatar_url",
       )
       .bind(normalized, avatarUrl),
-    db
-      .prepare(
-        "UPDATE api_keys SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT id FROM users WHERE github_login = ?) AND revoked_at IS NULL",
-      )
-      .bind(normalized),
+    db.prepare(signInRevokeSql).bind(normalized),
     db
       .prepare(
         "INSERT INTO api_keys (key_hash, user_id) VALUES (?, (SELECT id FROM users WHERE github_login = ?))",
