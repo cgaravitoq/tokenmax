@@ -330,7 +330,7 @@ describe("recordUsage", () => {
     expect(repeated?.totals.input).toBe(50);
   });
 
-  it("replaces from the earliest reported date and only for that machine", async () => {
+  it("replaces every bucket of a machine when its timezone changes", async () => {
     const sqlite = database();
     const db = sqlite.asD1();
     const userId = seedUser(sqlite);
@@ -367,10 +367,41 @@ describe("recordUsage", () => {
         "SELECT machine_id, date, input FROM usage_days ORDER BY machine_id, date",
       ),
     ).toEqual([
-      { machine_id: "mac-1", date: "2026-09-01", input: 5 },
       { machine_id: "mac-1", date: "2026-09-10", input: 60 },
       { machine_id: "mac-1", date: "2026-09-11", input: 70 },
       { machine_id: "mac-2", date: "2026-09-10", input: 7 },
+    ]);
+  });
+
+  it("a timezone change leaves no row in the old zone", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const userId = seedUser(sqlite);
+
+    await recordUsage(
+      db,
+      userId,
+      report("mac-1", [tokensDay("2026-09-01", 5)], "UTC"),
+      reportedAt,
+    );
+    await recordUsage(
+      db,
+      userId,
+      report(
+        "mac-1",
+        [tokensDay("2026-09-11", 70), tokensDay("2026-09-10", 60)],
+        "Europe/Madrid",
+      ),
+      new Date("2026-09-11T08:00:00.000Z"),
+    );
+
+    expect(
+      sqlite.query<{ date: string; input: number }>(
+        "SELECT date, input FROM usage_days ORDER BY date",
+      ),
+    ).toEqual([
+      { date: "2026-09-10", input: 60 },
+      { date: "2026-09-11", input: 70 },
     ]);
   });
 });

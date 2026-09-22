@@ -135,27 +135,13 @@ export async function recordUsage(
 ): Promise<void> {
   const timezone = report.timezone ?? "UTC";
   const machine = canonicalMachineId(report.machine);
-  const stored = await db
-    .prepare(
-      "SELECT timezone FROM machines WHERE user_id = ? AND machine_id = ?",
-    )
-    .bind(userId, machine)
-    .first<{ timezone: string }>();
-  const earliest = report.days.reduce(
-    (min, day) => (day.date < min ? day.date : min),
-    report.days[0].date,
-  );
 
   await db.batch([
-    ...(stored !== null && stored.timezone !== timezone
-      ? [
-          db
-            .prepare(
-              "DELETE FROM usage_days WHERE user_id = ? AND machine_id = ? AND date >= ?",
-            )
-            .bind(userId, machine, earliest),
-        ]
-      : []),
+    db
+      .prepare(
+        "DELETE FROM usage_days WHERE user_id = ? AND machine_id = ? AND (SELECT timezone FROM machines WHERE user_id = ? AND machine_id = ?) <> ?",
+      )
+      .bind(userId, machine, userId, machine, timezone),
     db
       .prepare(
         "INSERT INTO machines (user_id, machine_id, last_seen, timezone) VALUES (?, ?, ?, ?) ON CONFLICT (user_id, machine_id) DO UPDATE SET last_seen = excluded.last_seen, timezone = excluded.timezone",
