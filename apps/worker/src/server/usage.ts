@@ -94,6 +94,17 @@ export function canonicalMachineId(machine: string): string {
 
 const encoder = new TextEncoder();
 
+const batchLimit = 1000;
+
+async function runBatches(
+  db: D1Database,
+  statements: D1PreparedStatement[],
+): Promise<void> {
+  for (let start = 0; start < statements.length; start += batchLimit) {
+    await db.batch(statements.slice(start, start + batchLimit));
+  }
+}
+
 const upsertDaySql = `INSERT INTO usage_days (
   user_id, machine_id, date, provider, model, input, output, cache_create,
   cache_read, cost_usd
@@ -136,7 +147,7 @@ export async function recordUsage(
   const timezone = report.timezone ?? "UTC";
   const machine = canonicalMachineId(report.machine);
 
-  await db.batch([
+  await runBatches(db, [
     db
       .prepare(
         "DELETE FROM usage_days WHERE user_id = ? AND machine_id = ? AND (SELECT timezone FROM machines WHERE user_id = ? AND machine_id = ?) <> ?",

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { UsageDayReport, UsageRange, UsageReport } from "@/server/usage";
 import {
   authenticateApiKey,
@@ -403,6 +403,41 @@ describe("recordUsage", () => {
       { date: "2026-09-10", input: 60 },
       { date: "2026-09-11", input: 70 },
     ]);
+  });
+
+  function manyDays(count: number): UsageDayReport[] {
+    return Array.from({ length: count }, (_, index) =>
+      tokensDay(
+        new Date(Date.UTC(2021, 0, 1 + index)).toISOString().slice(0, 10),
+        1,
+      ),
+    );
+  }
+
+  it("stores a 1200-row report in batches of at most 1000 statements", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const batch = vi.spyOn(db, "batch");
+    const userId = seedUser(sqlite);
+
+    await recordUsage(db, userId, report("mac-1", manyDays(1200)), reportedAt);
+
+    const sizes = batch.mock.calls.map(([statements]) => statements.length);
+    expect(sizes.length).toBeGreaterThan(1);
+    for (const size of sizes) expect(size).toBeLessThanOrEqual(1000);
+    expect(sqlite.query("SELECT date FROM usage_days")).toHaveLength(1200);
+  });
+
+  it("rejects a batch above the D1 statement limit", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const statements = Array.from({ length: 1001 }, () =>
+      db.prepare("SELECT 1"),
+    );
+
+    await expect(db.batch(statements)).rejects.toThrow(
+      "exceeds the 1000-statement limit",
+    );
   });
 });
 

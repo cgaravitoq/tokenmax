@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 type SqliteValue = null | number | bigint | string | Uint8Array<ArrayBuffer>;
 
+const maxBatchStatements = 1000;
+
 interface SqliteRow {
   [column: string]: unknown;
 }
@@ -137,6 +139,11 @@ export class SqliteD1TestDatabase {
     statements: D1PreparedStatement[],
   ): Promise<D1Result<T>[]> {
     this.beforeBatch?.();
+    if (statements.length > maxBatchStatements) {
+      throw new Error(
+        `D1 batch of ${statements.length} statements exceeds the ${maxBatchStatements}-statement limit`,
+      );
+    }
     const sqliteStatements = statements.map((statement) => {
       if (!(statement instanceof SqliteD1Statement)) {
         throw new TypeError("Statement belongs to another database");
