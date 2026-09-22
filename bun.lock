@@ -29,7 +29,7 @@
       },
       "devDependencies": {
         "@astrojs/check": "^0.9.10",
-        "@types/node": "^24.13.3",
+        "@types/node": "^24.13.6",
         "typescript": "^6.0.3",
         "vitest": "^4.1.11",
         "wrangler": "^4.127.1",
@@ -37,7 +37,7 @@
     },
     "packages/collector": {
       "name": "tokenmax-collector",
-      "version": "0.3.0",
+      "version": "0.3.2",
       "bin": {
         "tokenmax": "./src/cli.ts",
       },
@@ -47,7 +47,7 @@
         "zod": "^4.4.3",
       },
       "devDependencies": {
-        "@types/node": "^24.13.3",
+        "@types/node": "^24.13.6",
         "typescript": "^6.0.3",
         "vitest": "^4.1.11",
       },
@@ -542,7 +542,7 @@
 
     "@types/nlcst": ["@types/nlcst@2.0.3", "", { "dependencies": { "@types/unist": "*" } }, "sha512-vSYNSDe6Ix3q+6Z7ri9lyWqgGhJTmzRjZRqyq15N0Z/1/UnVsno9G/N40NBijoYx2seFDIl0+B2mgAb9mezUCA=="],
 
-    "@types/node": ["@types/node@24.13.4", "", { "dependencies": { "undici-types": "~7.18.0" } }, "sha512-YJ7EqCstVTzIr0fMr7qul/977en+pQHrfmuKIo6Zr9i75Be21dr3MovcfvGtyvi2HAUrRerWps5sMO9I7WaxDw=="],
+    "@types/node": ["@types/node@24.13.6", "", { "dependencies": { "undici-types": "~7.18.0" } }, "sha512-SGrw/h3KPFshy3OE6ZL53LMBG5vGQQ8/gIpiqz/kRZhPJ7HgwCEs8LBuNtWLa8dvGZVpSF7+Bf+c11HUrCb/yg=="],
 
     "@types/unist": ["@types/unist@3.0.3", "", {}, "sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q=="],
 
