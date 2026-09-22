@@ -23,6 +23,7 @@ export const litellmPricesUrl =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 
 const maxAgeMs = 24 * 60 * 60 * 1000;
+const fetchTimeoutMs = 30_000;
 
 const pricedEntry = z.object({
   cache_creation_input_token_cost: z.number().optional(),
@@ -77,7 +78,8 @@ async function readCache(
     throw error;
   }
   try {
-    return { modifiedAt, table: parseLitellmPrices(source) };
+    const table = parseLitellmPrices(source);
+    return table.size === 0 ? null : { modifiedAt, table };
   } catch {
     return null;
   }
@@ -90,8 +92,14 @@ async function writeCache(pricesFile: string, source: string): Promise<void> {
   await rename(partial, pricesFile);
 }
 
-async function fetchPrices(fetcher: Fetcher): Promise<string> {
-  const response = await fetcher(litellmPricesUrl, { method: "GET" });
+async function fetchPrices(
+  fetcher: Fetcher,
+  timeoutMs: number,
+): Promise<string> {
+  const response = await fetcher(litellmPricesUrl, {
+    method: "GET",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
   const source = await response.text();
   if (response.status !== 200) {
     throw new Error(`LiteLLM responded ${response.status}`);
@@ -103,6 +111,7 @@ export async function loadPrices(
   fetcher: Fetcher,
   pricesFile: string,
   now: Date,
+  timeoutMs = fetchTimeoutMs,
 ): Promise<PriceTable> {
   const cached = await readCache(pricesFile);
   if (cached !== null && now.getTime() - cached.modifiedAt < maxAgeMs) {
@@ -111,8 +120,11 @@ export async function loadPrices(
   let source: string;
   let table: PriceTable;
   try {
-    source = await fetchPrices(fetcher);
+    source = await fetchPrices(fetcher, timeoutMs);
     table = parseLitellmPrices(source);
+    if (table.size === 0) {
+      throw new Error("LiteLLM returned an empty price table");
+    }
   } catch (error) {
     if (cached !== null) {
       return cached.table;

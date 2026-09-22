@@ -63,6 +63,9 @@ async function runCollect(io: CliIo): Promise<number> {
     );
     return 2;
   }
+  for (const warning of result.warnings) {
+    io.stderr(warning);
+  }
   io.stderr(result.message);
   return 1;
 }

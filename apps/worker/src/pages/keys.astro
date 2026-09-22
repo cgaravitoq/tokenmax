@@ -3,6 +3,8 @@ import KeyReveal from "@/components/key-reveal.vue";
 
 export const prerender = false;
 
+Astro.response.headers.set("Cache-Control", "no-store");
+
 const newKey = Astro.cookies.get("tokenmax_new_key")?.value ?? null;
 if (newKey !== null) {
   Astro.cookies.delete("tokenmax_new_key", { path: "/keys" });

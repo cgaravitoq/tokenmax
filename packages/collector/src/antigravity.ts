@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
-import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { type ReaderSteps, readDirectorySteps } from "./devin";
 
 export interface AntigravityStep {
   at: Date;
@@ -123,14 +123,15 @@ function openReadOnly(file: string): DatabaseSync {
   const location = existsSync(`${file}-wal`)
     ? file
     : `file:${file.split("/").map(encodeURIComponent).join("/")}?immutable=1`;
-  return new DatabaseSync(location, { readOnly: true });
+  const db = new DatabaseSync(location, { readOnly: true });
+  db.exec("PRAGMA busy_timeout = 5000");
+  return db;
 }
 
 function readConversation(
   file: string,
   names: Map<number, string>,
-  steps: RawStep[],
-): void {
+): ReaderSteps<RawStep> {
   const db = openReadOnly(file);
   try {
     const generations = db.prepare("SELECT data FROM gen_metadata").all() as {
@@ -147,6 +148,7 @@ function readConversation(
         names.set(code, name);
       }
     }
+    const steps: RawStep[] = [];
     const rows = db
       .prepare("SELECT metadata FROM steps WHERE metadata IS NOT NULL")
       .all() as { metadata: Uint8Array }[];
@@ -166,6 +168,7 @@ function readConversation(
         output: integer(usage, outputField) ?? 0,
       });
     }
+    return { failures: [], steps };
   } finally {
     db.close();
   }
@@ -174,32 +177,13 @@ function readConversation(
 export async function readAntigravitySteps(
   dir: string,
 ): Promise<AntigravityUsage> {
-  let files: string[];
-  try {
-    files = await readdir(dir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { failures: [], steps: [] };
-    }
-    throw error;
-  }
   const names = new Map<number, string>();
-  const steps: RawStep[] = [];
-  const failures: string[] = [];
-  for (const file of files.filter((name) => name.endsWith(".db")).sort()) {
-    const conversation = resolve(dir, file);
-    const before = steps.length;
-    try {
-      readConversation(conversation, names, steps);
-    } catch (error) {
-      steps.length = before;
-      const message = error instanceof Error ? error.message : String(error);
-      failures.push(`${conversation}: ${message}`);
-    }
-  }
+  const read = await readDirectorySteps(dir, ".db", async (file) =>
+    readConversation(file, names),
+  );
   return {
-    failures,
-    steps: steps.map(({ modelCode, ...step }) => ({
+    failures: read.failures,
+    steps: read.steps.map(({ modelCode, ...step }) => ({
       ...step,
       model: names.get(modelCode) ?? unknownModel,
     })),

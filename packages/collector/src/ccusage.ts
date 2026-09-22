@@ -28,6 +28,7 @@ const ccusageDaily = z.object({
 export type CcusageDaily = z.infer<typeof ccusageDaily>;
 
 const windowDays = 14;
+const commandTimeoutMs = 60_000;
 
 export function parseCcusageDaily(source: string): CcusageDaily {
   return ccusageDaily.parse(JSON.parse(source));
@@ -76,10 +77,11 @@ export async function readCcusageDaily(
   since: string,
   timezone: string,
 ): Promise<CcusageDaily> {
-  const result = await runner(process.execPath, [
-    ccusageCliPath(),
-    ...ccusageArguments(since, timezone),
-  ]);
+  const result = await runner(
+    process.execPath,
+    [ccusageCliPath(), ...ccusageArguments(since, timezone)],
+    commandTimeoutMs,
+  );
   if (result.exitCode !== 0) {
     throw new Error(
       `ccusage exited with ${result.exitCode}: ${result.stderr.trim()}`,

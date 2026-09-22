@@ -156,6 +156,22 @@ describe("loadPrices", () => {
     expect(await readFile(pricesFile, "utf8")).toBe(sample);
   });
 
+  it("refetches a fresh cache that holds no prices", async () => {
+    const calls: string[] = [];
+    const now = new Date("2026-09-13T12:00:00.000Z");
+    await writeCache("{}", new Date(now.getTime() - 60 * 1000));
+
+    const table = await loadPrices(
+      fetcherReturning(200, sample, calls),
+      pricesFile,
+      now,
+    );
+
+    expect(calls).toEqual([litellmPricesUrl]);
+    expect(table.size).toBe(2);
+    expect(await readFile(pricesFile, "utf8")).toBe(sample);
+  });
+
   it("keeps the stale cache when the fetch fails", async () => {
     const now = new Date("2026-09-13T12:00:00.000Z");
     await writeCache(sample, new Date(now.getTime() - 25 * 60 * 60 * 1000));
@@ -196,6 +212,38 @@ describe("loadPrices", () => {
     expect(await readdir(join(dir, "tokenmax"))).toEqual([
       "litellm-prices.json",
     ]);
+  });
+
+  it("gives up on a price fetch that never answers", async () => {
+    const neverAnswers: Fetcher = async (_url, init) => {
+      const signal = init.signal;
+      if (signal === undefined || signal === null) {
+        throw new Error("the price fetch carries no signal");
+      }
+      await new Promise<void>((resolve) => {
+        signal.addEventListener("abort", () => resolve());
+      });
+      signal.throwIfAborted();
+      throw new Error("the price fetch was not aborted");
+    };
+
+    await expect(
+      loadPrices(neverAnswers, pricesFile, new Date(), 50),
+    ).rejects.toThrow(/abort|timeout/i);
+  });
+
+  it("keeps the stale cache when LiteLLM answers an empty table", async () => {
+    const now = new Date("2026-09-13T12:00:00.000Z");
+    await writeCache(sample, new Date(now.getTime() - 25 * 60 * 60 * 1000));
+
+    const table = await loadPrices(
+      fetcherReturning(200, "{}", []),
+      pricesFile,
+      now,
+    );
+
+    expect(table.size).toBe(2);
+    expect(await readFile(pricesFile, "utf8")).toBe(sample);
   });
 
   it("fails without a cache when the fetch fails", async () => {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { app } from "@/server/app";
+import { rotateApiKey, signInRevokeSql } from "@/server/auth";
 import { hashApiKey } from "@/server/usage";
 import { createSqliteD1, type SqliteD1TestDatabase } from "@/test/sqlite-d1";
 
@@ -45,6 +46,7 @@ interface GithubRequest {
   authorization: string | null;
   contentType: string | null;
   userAgent: string | null;
+  hasSignal: boolean;
   body: string | null;
 }
 
@@ -99,6 +101,7 @@ function stubGithub(replies: GithubReply[]): GithubRequest[] {
       authorization: request.headers.get("Authorization"),
       contentType: request.headers.get("Content-Type"),
       userAgent: request.headers.get("User-Agent"),
+      hasSignal: init?.signal !== undefined && init.signal !== null,
       body: typeof init?.body === "string" ? init.body : null,
     });
     return Promise.resolve(
@@ -119,6 +122,7 @@ function exchangeRequest(code: string): GithubRequest {
     authorization: null,
     contentType: "application/json",
     userAgent: null,
+    hasSignal: true,
     body: JSON.stringify({
       client_id: clientId,
       client_secret: clientSecret,
@@ -136,6 +140,7 @@ function profileRequest(token: string): GithubRequest {
     authorization: `Bearer ${token}`,
     contentType: null,
     userAgent: "tokenmax",
+    hasSignal: true,
     body: null,
   };
 }
@@ -367,6 +372,46 @@ describe("GET /auth/github/callback", () => {
     ]);
   });
 
+  it("answers 502 when the exchange cannot be reached", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new Error("network down")));
+    const response = await app.request(
+      callbackUrl("state-a"),
+      callbackInit("state-a"),
+      environment(database().asD1()),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: "github exchange failed",
+    });
+    expectStateCleared(response);
+  });
+
+  it("answers 502 when the profile cannot be reached", async () => {
+    const calls: number[] = [];
+    vi.stubGlobal("fetch", () => {
+      calls.push(1);
+      return calls.length === 1
+        ? Promise.resolve(
+            new Response(JSON.stringify({ access_token: githubToken }), {
+              headers: { "Content-Type": "application/json" },
+            }),
+          )
+        : Promise.reject(new Error("network down"));
+    });
+    const response = await app.request(
+      callbackUrl("state-a"),
+      callbackInit("state-a"),
+      environment(database().asD1()),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: "github profile failed",
+    });
+    expectStateCleared(response);
+  });
+
   it.each([
     ["without a login", "{}"],
     ["with a non-string login", JSON.stringify({ login: 42 })],
@@ -434,6 +479,26 @@ describe("GET /auth/github/callback", () => {
     expect(
       sqlite.query("SELECT key_hash FROM api_keys WHERE revoked_at IS NULL"),
     ).toEqual([{ key_hash: await hashApiKey(key) }]);
+  });
+
+  it("stores a GitHub login in lowercase", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    stubGithub([
+      { body: JSON.stringify({ access_token: githubToken }) },
+      { body: JSON.stringify({ login: "OctoCat", avatar_url: avatarUrl }) },
+    ]);
+
+    const response = await app.request(
+      callbackUrl("state-a"),
+      callbackInit("state-a"),
+      environment(db),
+    );
+
+    expect(response.status).toBe(303);
+    expect(sqlite.query("SELECT github_login FROM users")).toEqual([
+      { github_login: "octocat" },
+    ]);
   });
 
   it("writes the user, the revocation and the new key in one batch", async () => {
@@ -554,6 +619,37 @@ describe("POST /api/keys/rotate", () => {
     ).toEqual([{ key_hash: await hashApiKey(validKey) }]);
   });
 
+  it("leaves exactly one live key after two sequential rotations", async () => {
+    const sqlite = await seeded();
+    const db = sqlite.asD1();
+    await rotateApiKey(db, 1, await hashApiKey("rotated-a"));
+    await rotateApiKey(db, 1, await hashApiKey("rotated-b"));
+
+    expect(
+      sqlite.query("SELECT key_hash FROM api_keys WHERE revoked_at IS NULL"),
+    ).toEqual([{ key_hash: await hashApiKey("rotated-b") }]);
+  });
+
+  it("revokes every live key of the user on the route", async () => {
+    const sqlite = await seeded();
+    const db = sqlite.asD1();
+    sqlite.exec(
+      `INSERT INTO api_keys (key_hash, user_id) VALUES ('${await hashApiKey("stale-key")}', 1)`,
+    );
+
+    const response = await app.request(
+      `${origin}/api/keys/rotate`,
+      rotateInit(validKey),
+      environment(db),
+    );
+
+    expect(response.status).toBe(200);
+    const rotated = rotateResponse.parse(await response.json());
+    expect(
+      sqlite.query("SELECT key_hash FROM api_keys WHERE revoked_at IS NULL"),
+    ).toEqual([{ key_hash: await hashApiKey(rotated.key) }]);
+  });
+
   it("revokes the presented key and inserts the new one in one batch", async () => {
     const sqlite = await seeded();
     const db = sqlite.asD1();
@@ -609,5 +705,19 @@ describe("POST /api/keys/rotate", () => {
     );
     expect(accepted.status).toBe(200);
     await expect(accepted.json()).resolves.toEqual({ accepted: 1 });
+  });
+});
+
+describe("the api_keys user_id index", () => {
+  it("serves the sign-in revocation", () => {
+    const sqlite = database();
+    const plan = sqlite.query<{ detail: string }>(
+      `EXPLAIN QUERY PLAN ${signInRevokeSql}`,
+      "octocat",
+    );
+
+    expect(plan.map(({ detail }) => detail).join("\n")).toContain(
+      "api_keys_user_id",
+    );
   });
 });

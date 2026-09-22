@@ -117,6 +117,27 @@ describe("collect", () => {
     });
   });
 
+  it("prints the local warnings and the error and exits 1 when every source fails", async () => {
+    await writeConfig(paths.configFile, { targets: [{ key, url }] });
+    const result = await run(["collect"], {
+      fetcher: failingFetch,
+      runner: async () => ({
+        exitCode: 2,
+        stderr: "native binary is not available\n",
+        stdout: "",
+      }),
+    });
+
+    expect(result).toEqual({
+      code: 1,
+      stderr: [
+        "ccusage: ccusage exited with 2: native binary is not available",
+        "ccusage exited with 2: native binary is not available",
+      ],
+      stdout: [],
+    });
+  });
+
   it("prints the install command and exits 2 without a config", async () => {
     const result = await run(["collect"], {
       fetcher: failingFetch,
