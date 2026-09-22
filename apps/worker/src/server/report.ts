@@ -68,7 +68,7 @@ export const usageReport = z.object(
     days: z
       .array(usageDay, "invalid days")
       .min(1, "invalid days")
-      .max(2000, "invalid days"),
+      .max(5000, "invalid days"),
   },
   "invalid report",
 );

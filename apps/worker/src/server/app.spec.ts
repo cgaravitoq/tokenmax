@@ -91,10 +91,10 @@ const constraints: ConstraintCase[] = [
   {
     field: "days",
     scope: "report",
-    accept: [distinctDays(2000)],
+    accept: [distinctDays(5000)],
     reject: [
       [[], "invalid days"],
-      [distinctDays(2001), "invalid days"],
+      [distinctDays(5001), "invalid days"],
     ],
   },
   {

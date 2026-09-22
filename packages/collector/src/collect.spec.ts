@@ -1034,6 +1034,66 @@ describe("collect", () => {
     expect(slices.map((days) => days.length)).toEqual([900, 901, 700]);
   });
 
+  it("reports a date carrying more rows than the packing bound in one request", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const daily = {
+      daily: Array.from({ length: 2500 }, (_, index) => ({
+        agents: [
+          {
+            agent: "claude",
+            modelBreakdowns: [
+              {
+                cacheCreationTokens: 0,
+                cacheReadTokens: 0,
+                cost: 0,
+                inputTokens: 1,
+                modelName: `model-${index}`,
+                outputTokens: 1,
+              },
+            ],
+          },
+        ],
+        period: "2026-09-05",
+      })),
+    };
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: async (url, init) => {
+        requests.push({ init, url });
+        const parsed = parseReport(String(init.body));
+        if (!parsed.ok) {
+          throw new Error(parsed.error);
+        }
+        return {
+          status: 200,
+          text: async () =>
+            JSON.stringify({ accepted: parsed.report.days.length }),
+        };
+      },
+      identity,
+      runner: dailyRunner(JSON.stringify(daily), []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "abc-123",
+      targets: [{ accepted: 2500, url }],
+      warnings: [],
+    });
+    expect(requests).toHaveLength(1);
+    const days = JSON.parse(String(requests[0].init.body)).days as UsageDay[];
+    expect(days).toHaveLength(2500);
+    expect(new Set(days.map((day) => day.date))).toEqual(
+      new Set(["2026-09-05"]),
+    );
+  });
+
   it("reports nothing without calling tokenmax when there is no usage", async () => {
     await writeConfig(paths.configFile, { targets: [target] });
     const result = await collect({
