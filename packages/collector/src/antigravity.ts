@@ -123,7 +123,9 @@ function openReadOnly(file: string): DatabaseSync {
   const location = existsSync(`${file}-wal`)
     ? file
     : `file:${file.split("/").map(encodeURIComponent).join("/")}?immutable=1`;
-  return new DatabaseSync(location, { readOnly: true });
+  const db = new DatabaseSync(location, { readOnly: true });
+  db.exec("PRAGMA busy_timeout = 5000");
+  return db;
 }
 
 function readConversation(

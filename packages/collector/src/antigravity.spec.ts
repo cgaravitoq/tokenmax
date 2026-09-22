@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -127,6 +129,39 @@ describe("readAntigravitySteps", () => {
       `${join(dir, "b.db")}: file is not a database`,
       `${join(dir, "c.db")}: truncated protobuf message`,
     ]);
+  });
+
+  it("waits out a writer lock instead of dropping the conversation", async () => {
+    const file = join(dir, "locked.db");
+    writeConversation(file, {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [{ at: new Date(0), input: 1, modelCode: 1318, output: 1 }],
+    });
+    const writable = new DatabaseSync(file);
+    writable.exec("PRAGMA journal_mode = delete");
+    writable.close();
+    await writeFile(`${file}-wal`, "");
+
+    const script = [
+      'const { DatabaseSync } = require("node:sqlite");',
+      `const db = new DatabaseSync(${JSON.stringify(file)});`,
+      'db.exec("BEGIN EXCLUSIVE");',
+      'process.stdout.write("locked\\n");',
+      'setTimeout(() => { db.exec("COMMIT"); db.close(); }, 400);',
+    ].join("\n");
+    const locker = spawn(process.execPath, ["-e", script], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    try {
+      await once(locker.stdout, "data");
+
+      const usage = await readAntigravitySteps(dir);
+
+      expect(usage.failures).toEqual([]);
+      expect(usage.steps).toHaveLength(1);
+    } finally {
+      await once(locker, "close");
+    }
   });
 
   it("opens a conversation whose name needs URI escaping", async () => {
