@@ -7,6 +7,16 @@ const autoMergePath = new URL(
 );
 const dependabotSource = await Bun.file(dependabotPath).text();
 const autoMergeSource = await Bun.file(autoMergePath).text();
+const collectorManifest = record(
+  await Bun.file(
+    new URL("../packages/collector/package.json", import.meta.url),
+  ).json(),
+  "collector package manifest",
+);
+const collectorDependencies = record(
+  collectorManifest.dependencies,
+  "collector dependencies",
+);
 
 const patchGate =
   "steps.metadata.outputs.update-type == 'version-update:semver-patch' && !contains(steps.metadata.outputs.dependency-names, 'ccusage')";
@@ -389,5 +399,11 @@ describe("Dependabot auto-merge workflow", () => {
         autoMergeSource.replace("pull_request:", "pull_request_target:"),
       ),
     ).toThrow("forbidden behavior");
+  });
+});
+
+describe("Collector dependency pins", () => {
+  it("keeps ccusage exact, because its JSON shape is undocumented", () => {
+    expect(collectorDependencies.ccusage).toBe("20.0.20");
   });
 });
