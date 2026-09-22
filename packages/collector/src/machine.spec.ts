@@ -4,28 +4,35 @@ import { machineId, platformUuidFromIoreg } from "./machine";
 const serverMachineId = /^[A-Za-z0-9._-]{1,64}$/;
 
 describe("machineId", () => {
-  it("joins the hostname and the platform uuid", () => {
+  it("reports the platform uuid alone", () => {
     expect(machineId("macbook", "3A4B5C6D-1234-5678")).toBe(
-      "macbook-3A4B5C6D-1234-5678",
+      "3A4B5C6D-1234-5678",
+    );
+  });
+
+  it("answers the same identifier on every network the machine joins", () => {
+    const uuid = "9DC3A7C8-9E34-5FAA-AA82-0661AD72B5FE";
+    expect(machineId("MacBook-Air-de-Carlos.local", uuid)).toBe(
+      machineId("pc-1333.home", uuid),
     );
   });
 
   it("replaces the characters the server refuses", () => {
-    expect(machineId("Test MacBook Pro", "0:0")).toBe("Test-MacBook-Pro-0-0");
+    expect(machineId("Test MacBook Pro", null)).toBe("Test-MacBook-Pro");
   });
 
   it("replaces non ascii characters", () => {
-    expect(machineId("caf\u00e9", "\u00fc")).toBe("caf---");
+    expect(machineId("caf\u00e9", null)).toBe("caf-");
   });
 
   it("cuts the identifier to 64 characters", () => {
-    const id = machineId("h".repeat(80), "u".repeat(10));
+    const id = machineId("h".repeat(80), null);
     expect(id).toHaveLength(64);
     expect(id).toMatch(serverMachineId);
   });
 
-  it("falls back to the hostname alone without a platform uuid", () => {
-    expect(machineId("Test MacBook Pro", null)).toBe("Test-MacBook-Pro");
+  it("falls back to the hostname without a platform uuid", () => {
+    expect(machineId("Test-MacBook-Pro", null)).toBe("Test-MacBook-Pro");
   });
 });
 

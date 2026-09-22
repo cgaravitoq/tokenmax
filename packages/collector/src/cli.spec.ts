@@ -76,7 +76,7 @@ describe("collect", () => {
     expect(result).toEqual({
       code: 0,
       stderr: [],
-      stdout: [`accepted 3 days for test-host-abc-123 at ${url}`],
+      stdout: [`accepted 3 days for abc-123 at ${url}`],
     });
   });
 
@@ -99,7 +99,7 @@ describe("collect", () => {
     expect(result).toEqual({
       code: 1,
       stderr: [`${other}: tokenmax responded 401: {"error":"unauthorized"}`],
-      stdout: [`accepted 3 days for test-host-abc-123 at ${url}`],
+      stdout: [`accepted 3 days for abc-123 at ${url}`],
     });
   });
 
