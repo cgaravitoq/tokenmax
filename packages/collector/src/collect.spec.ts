@@ -88,6 +88,29 @@ const expectedDays: UsageDay[] = [
   },
 ];
 
+const ccusageAntigravityDay = JSON.stringify({
+  daily: [
+    {
+      agents: [
+        {
+          agent: "antigravity",
+          modelBreakdowns: [
+            {
+              cacheCreationTokens: 0,
+              cacheReadTokens: 0,
+              cost: 7.5,
+              inputTokens: 9_996_009,
+              modelName: "gemini-3.8-flash-high",
+              outputTokens: 0,
+            },
+          ],
+        },
+      ],
+      period: "2026-09-09",
+    },
+  ],
+});
+
 interface Request {
   init: RequestInit;
   url: string;
@@ -322,6 +345,125 @@ describe("collect", () => {
     expect(await readFile(paths.pricesFile, "utf8")).toBe(litellmPrices);
     expect(JSON.parse(String(requests[0].init.body)).days).toEqual([
       ...expectedDays,
+      {
+        cache_create: 0,
+        cache_read: 8144,
+        cost_usd: 9536 * 7.5e-7 + 133 * 3.75e-6 + 8144 * 7.5e-8,
+        date: "2026-09-10",
+        input: 9536,
+        model: "gemini-3.8-flash",
+        output: 133,
+        provider: "antigravity",
+      },
+    ]);
+  });
+
+  it("drops the Antigravity steps of a day ccusage already reports", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-09T12:00:00.000Z"),
+          input: 10_081_780,
+          modelCode: 1318,
+          output: 0,
+        },
+      ],
+    });
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":1}'),
+        [],
+      ),
+      identity,
+      runner: dailyRunner(ccusageAntigravityDay, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "abc-123",
+      targets: [{ accepted: 1, url }],
+      warnings: [],
+    });
+    expect(JSON.parse(String(requests[0].init.body)).days).toEqual([
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 7.5,
+        date: "2026-09-09",
+        input: 9_996_009,
+        model: "gemini-3.8-flash-high",
+        output: 0,
+        provider: "antigravity",
+      },
+    ]);
+  });
+
+  it("keeps the Antigravity steps of a day ccusage does not cover", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-09T12:00:00.000Z"),
+          input: 10_081_780,
+          modelCode: 1318,
+          output: 0,
+        },
+        {
+          at: new Date("2026-09-10T12:00:00.000Z"),
+          cacheRead: 8144,
+          input: 9536,
+          modelCode: 1318,
+          output: 133,
+        },
+      ],
+    });
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":1}'),
+        [],
+      ),
+      identity,
+      runner: dailyRunner(ccusageAntigravityDay, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "abc-123",
+      targets: [{ accepted: 1, url }],
+      warnings: [],
+    });
+    expect(JSON.parse(String(requests[0].init.body)).days).toEqual([
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 7.5,
+        date: "2026-09-09",
+        input: 9_996_009,
+        model: "gemini-3.8-flash-high",
+        output: 0,
+        provider: "antigravity",
+      },
       {
         cache_create: 0,
         cache_read: 8144,

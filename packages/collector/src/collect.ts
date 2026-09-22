@@ -55,6 +55,9 @@ const messageOf = (error: unknown): string =>
 const reportUrl = (baseUrl: string): string =>
   `${baseUrl.replace(/\/+$/, "")}/api/report`;
 
+const providerDay = (day: UsageDay): string =>
+  `${day.date}\u0000${day.provider}`;
+
 function acceptedCount(body: string): number | null {
   let payload: unknown;
   try {
@@ -212,7 +215,12 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
   };
   const antigravity = await localDays(antigravitySource, window);
   const devin = await localDays(devinSource, window);
-  days.push(...antigravity.days, ...devin.days);
+  const covered = new Set(days.map(providerDay));
+  days.push(
+    ...[...antigravity.days, ...devin.days].filter(
+      (day) => !covered.has(providerDay(day)),
+    ),
+  );
   const warnings = [...antigravity.warnings, ...devin.warnings];
   if (days.length === 0) {
     return { kind: "empty", warnings };
