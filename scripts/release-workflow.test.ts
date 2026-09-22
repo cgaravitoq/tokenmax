@@ -24,79 +24,207 @@ npm publish --provenance --access public
 const releaseRun =
   'gh release view "$GITHUB_REF_NAME" || gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "tokenmax-collector ${GITHUB_REF_NAME#collector-v}"';
 
-const expectedWorkflow = {
-  name: "Release collector",
-  on: { push: { tags: ["collector-v*"] } },
-  permissions: { contents: "write", "id-token": "write" },
-  concurrency: {
-    group: "release-${{ github.ref }}",
-    "cancel-in-progress": false,
-  },
-  jobs: {
-    release: {
-      name: "Publish & release",
-      "runs-on": "ubuntu-latest",
-      steps: [
-        { uses: checkoutAction, with: { ref: "${{ github.sha }}" } },
-        {
-          uses: setupNodeAction,
-          with: {
-            "node-version": "24.19.0",
-            "registry-url": "https://registry.npmjs.org",
-          },
-        },
-        { uses: setupBunAction, with: { "bun-version": "1.4.0" } },
-        { name: "Install dependencies", run: "bun install --frozen-lockfile" },
-        {
-          name: "Check the tag against the package version",
-          "working-directory": "packages/collector",
-          run: 'test "${GITHUB_REF_NAME#collector-v}" = "$(bun -p \'require("./package.json").version\')"',
-        },
-        { name: "Format & Lint (Biome)", run: "bun run format" },
-        { name: "Lint anti-slop (oxlint)", run: "bun run lint:slop" },
-        { name: "TypeScript check", run: "bun run check-types" },
-        { name: "Test", run: "bun run test" },
-        {
-          name: "Test dependency policy",
-          run: "bun run test:dependency-policy",
-        },
-        { name: "Test packed package", run: "bun run test:package" },
-        {
-          name: "Publish collector",
-          "working-directory": "packages/collector",
-          run: publishRun,
-          env: { NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}" },
-        },
-        {
-          name: "Create GitHub release",
-          run: releaseRun,
-          env: { GH_TOKEN: "${{ github.token }}" },
-        },
-      ],
-    },
-  },
+const expectedTrigger = { push: { tags: ["collector-v*"] } };
+
+const expectedPermissions = { contents: "write", "id-token": "write" };
+
+const expectedConcurrency = {
+  group: "release-${{ github.ref }}",
+  "cancel-in-progress": false,
 };
 
-const goldenFailure = "must match the reviewed release workflow exactly";
+const releaseTopLevelKeys = [
+  "concurrency",
+  "jobs",
+  "name",
+  "on",
+  "permissions",
+];
 
-function validateWorkflow(source: string): void {
-  let workflow: unknown;
-  try {
-    workflow = Bun.YAML.parse(source);
-  } catch {
-    throw new Error("Invalid release workflow YAML");
+const expectedJobKeys = ["name", "runs-on", "steps"];
+
+interface ExpectedStep {
+  uses?: string;
+  name?: string;
+  "working-directory"?: string;
+  run?: string;
+  with?: Record<string, string>;
+  env?: Record<string, string>;
+}
+
+interface NamedStep {
+  label: string;
+  step: ExpectedStep;
+}
+
+const expectedSteps: NamedStep[] = [
+  {
+    label: "checkout",
+    step: { uses: checkoutAction, with: { ref: "${{ github.sha }}" } },
+  },
+  {
+    label: "setup node",
+    step: {
+      uses: setupNodeAction,
+      with: {
+        "node-version": "24.19.0",
+        "registry-url": "https://registry.npmjs.org",
+      },
+    },
+  },
+  {
+    label: "setup bun",
+    step: { uses: setupBunAction, with: { "bun-version": "1.4.0" } },
+  },
+  {
+    label: "Install dependencies",
+    step: {
+      name: "Install dependencies",
+      run: "bun install --frozen-lockfile",
+    },
+  },
+  {
+    label: "Check the tag against the package version",
+    step: {
+      name: "Check the tag against the package version",
+      "working-directory": "packages/collector",
+      run: 'test "${GITHUB_REF_NAME#collector-v}" = "$(bun -p \'require("./package.json").version\')"',
+    },
+  },
+  {
+    label: "Format & Lint (Biome)",
+    step: { name: "Format & Lint (Biome)", run: "bun run format" },
+  },
+  {
+    label: "Lint anti-slop (oxlint)",
+    step: { name: "Lint anti-slop (oxlint)", run: "bun run lint:slop" },
+  },
+  {
+    label: "TypeScript check",
+    step: { name: "TypeScript check", run: "bun run check-types" },
+  },
+  { label: "Test", step: { name: "Test", run: "bun run test" } },
+  {
+    label: "Test dependency policy",
+    step: {
+      name: "Test dependency policy",
+      run: "bun run test:dependency-policy",
+    },
+  },
+  {
+    label: "Test packed package",
+    step: { name: "Test packed package", run: "bun run test:package" },
+  },
+  {
+    label: "Publish collector",
+    step: {
+      name: "Publish collector",
+      "working-directory": "packages/collector",
+      run: publishRun,
+      env: { NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}" },
+    },
+  },
+  {
+    label: "Create GitHub release",
+    step: {
+      name: "Create GitHub release",
+      run: releaseRun,
+      env: { GH_TOKEN: "${{ github.token }}" },
+    },
+  },
+];
+
+type UnknownRecord = Record<string, unknown>;
+
+function record(value: unknown, context: string): UnknownRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Invalid ${context}`);
   }
+  return value as UnknownRecord;
+}
+
+function steps(job: UnknownRecord, context: string): UnknownRecord[] {
+  if (!Array.isArray(job.steps)) {
+    throw new Error(`Invalid ${context} steps`);
+  }
+  return job.steps.map((value, index) =>
+    record(value, `${context} step ${index}`),
+  );
+}
+
+function expectNamed(
+  actual: unknown,
+  expected: unknown,
+  context: string,
+): void {
   try {
-    expect(workflow).toEqual(expectedWorkflow);
+    expect(actual).toEqual(expected);
   } catch (cause) {
     throw new Error(
-      `The release workflow ${goldenFailure}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `The release workflow must keep the reviewed ${context}: ${cause instanceof Error ? cause.message : String(cause)}`,
     );
   }
 }
 
+function validateWorkflow(source: string): void {
+  let workflow: UnknownRecord;
+  try {
+    workflow = record(Bun.YAML.parse(source), "release workflow");
+  } catch {
+    throw new Error("Invalid release workflow YAML");
+  }
+
+  const topLevelKeys = Object.keys(workflow).sort();
+  if (topLevelKeys.join(",") !== releaseTopLevelKeys.join(",")) {
+    throw new Error(
+      `The release workflow must declare exactly ${releaseTopLevelKeys.join(", ")} at the top level but declares ${topLevelKeys.join(", ")}`,
+    );
+  }
+  expectNamed(workflow.on, expectedTrigger, "trigger");
+  expectNamed(workflow.permissions, expectedPermissions, "permissions");
+  expectNamed(workflow.concurrency, expectedConcurrency, "concurrency");
+
+  const jobs = record(workflow.jobs, "release jobs");
+  const jobKeys = Object.keys(jobs).sort();
+  if (jobKeys.join(",") !== "release") {
+    throw new Error(
+      `The release workflow must declare exactly the release job but declares ${jobKeys.join(", ")}`,
+    );
+  }
+
+  const job = record(jobs.release, "release job");
+  const declaredJobKeys = Object.keys(job).sort();
+  if (declaredJobKeys.join(",") !== expectedJobKeys.join(",")) {
+    throw new Error(
+      `The release job must declare exactly ${expectedJobKeys.join(", ")} but declares ${declaredJobKeys.join(", ")}`,
+    );
+  }
+  if (job.name !== "Publish & release") {
+    throw new Error("The release job must keep the reviewed name");
+  }
+  if (job["runs-on"] !== "ubuntu-latest") {
+    throw new Error("The release job must run on ubuntu-latest");
+  }
+
+  const releaseSteps = steps(job, "release job");
+  if (releaseSteps.length !== expectedSteps.length) {
+    throw new Error(
+      `The release workflow must run exactly ${expectedSteps.length} steps but runs ${releaseSteps.length}`,
+    );
+  }
+  expectedSteps.forEach(({ label, step }, index) => {
+    try {
+      expect(releaseSteps[index]).toEqual(step);
+    } catch (cause) {
+      throw new Error(
+        `The release workflow step "${label}" must match the reviewed step: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    }
+  });
+}
+
 describe("release workflow", () => {
-  it("pins the release workflow as a golden object", () => {
+  it("pins every release step as a golden object", () => {
     expect(() => validateWorkflow(workflowSource)).not.toThrow();
   });
 
@@ -106,7 +234,9 @@ describe("release workflow", () => {
       '    branches: ["main"]',
     );
     expect(mutated).not.toBe(workflowSource);
-    expect(() => validateWorkflow(mutated)).toThrow(goldenFailure);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "must keep the reviewed trigger",
+    );
   });
 
   it("rejects skipping the tag and version check", () => {
@@ -115,7 +245,9 @@ describe("release workflow", () => {
       "      - name: Check the tag against the package version\n        if: false\n",
     );
     expect(mutated).not.toBe(workflowSource);
-    expect(() => validateWorkflow(mutated)).toThrow(goldenFailure);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      'step "Check the tag against the package version"',
+    );
   });
 
   it("rejects publishing a version that is already on npm", () => {
@@ -124,7 +256,7 @@ describe("release workflow", () => {
       '            echo "tokenmax-collector@$version is already published"\n',
     );
     expect(mutated).not.toBe(workflowSource);
-    expect(() => validateWorkflow(mutated)).toThrow(goldenFailure);
+    expect(() => validateWorkflow(mutated)).toThrow('step "Publish collector"');
   });
 
   it("rejects publishing without provenance", () => {
@@ -133,7 +265,7 @@ describe("release workflow", () => {
       "npm publish --access public",
     );
     expect(mutated).not.toBe(workflowSource);
-    expect(() => validateWorkflow(mutated)).toThrow(goldenFailure);
+    expect(() => validateWorkflow(mutated)).toThrow('step "Publish collector"');
   });
 
   it("rejects publishing with a token other than the npm secret", () => {
@@ -142,7 +274,7 @@ describe("release workflow", () => {
       "NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
     );
     expect(mutated).not.toBe(workflowSource);
-    expect(() => validateWorkflow(mutated)).toThrow(goldenFailure);
+    expect(() => validateWorkflow(mutated)).toThrow('step "Publish collector"');
   });
 
   it("rejects widening the permissions", () => {
@@ -151,7 +283,9 @@ describe("release workflow", () => {
       "  id-token: write\n  packages: write\n",
     );
     expect(mutated).not.toBe(workflowSource);
-    expect(() => validateWorkflow(mutated)).toThrow(goldenFailure);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "must keep the reviewed permissions",
+    );
   });
 
   it("rejects a release step that cannot fail", () => {
@@ -160,6 +294,59 @@ describe("release workflow", () => {
       '--title "tokenmax-collector ${GITHUB_REF_NAME#collector-v}" || true',
     );
     expect(mutated).not.toBe(workflowSource);
-    expect(() => validateWorkflow(mutated)).toThrow(goldenFailure);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      'step "Create GitHub release"',
+    );
+  });
+
+  it("rejects reordering the release steps", () => {
+    const mutated = workflowSource.replace(
+      "      - name: Test\n        run: bun run test\n\n      - name: Test dependency policy\n        run: bun run test:dependency-policy\n",
+      "      - name: Test dependency policy\n        run: bun run test:dependency-policy\n\n      - name: Test\n        run: bun run test\n",
+    );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow('step "Test"');
+  });
+
+  it("rejects dropping a gate from the release", () => {
+    const mutated = workflowSource.replace(
+      "      - name: Test packed package\n        run: bun run test:package\n\n",
+      "",
+    );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "must run exactly 13 steps",
+    );
+  });
+
+  it("rejects an unpinned setup action", () => {
+    const mutated = workflowSource.replace(
+      setupBunAction,
+      "oven-sh/setup-bun@v2.2.0",
+    );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow('step "setup bun"');
+  });
+
+  it("rejects releasing from another runner", () => {
+    const mutated = workflowSource.replace(
+      "    runs-on: ubuntu-latest\n",
+      "    runs-on: macos-latest\n",
+    );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "must run on ubuntu-latest",
+    );
+  });
+
+  it("rejects a top-level key the review never approved", () => {
+    const mutated = workflowSource.replace(
+      "\npermissions:\n",
+      '\ndefaults:\n  run:\n    shell: bash -c "exit 0; {0}"\n\npermissions:\n',
+    );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "must declare exactly concurrency, jobs, name, on, permissions at the top level",
+    );
   });
 });
