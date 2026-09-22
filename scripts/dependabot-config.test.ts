@@ -85,6 +85,79 @@ function step(steps: unknown[], index: number, context: string): UnknownRecord {
   return record(steps[index], context);
 }
 
+const repositorySelector = '--repo "$GITHUB_REPOSITORY"';
+
+function validateAwaitRun(run: string): void {
+  const lines = run.split("\n").map((line) => line.trim());
+  const listLine = lines.find((line) => line.includes("$(gh run list"));
+  const watchLine = lines.find((line) =>
+    line.includes('gh run watch "$run_id"'),
+  );
+  if (
+    !run.includes("${{ github.event.pull_request.head.sha }}") ||
+    !listLine ||
+    !watchLine
+  ) {
+    throw new Error(
+      "Dependabot auto-merge must watch the ci workflow run for the pull request head",
+    );
+  }
+  for (const [command, line] of [
+    ["list", listLine],
+    ["watch", watchLine],
+  ] as const) {
+    if (!line.includes(repositorySelector)) {
+      throw new Error(
+        `gh run ${command} must pass ${repositorySelector}, because the job runs without a checkout and gh cannot infer the repository`,
+      );
+    }
+  }
+  for (const selector of [
+    "--workflow ci.yml",
+    '--commit "$head_sha"',
+    "--limit 1",
+    "--json databaseId",
+    "--jq",
+  ]) {
+    if (!listLine.includes(selector)) {
+      throw new Error(
+        `gh run list must select exactly one ci run for the pull request head, with ${selector}`,
+      );
+    }
+  }
+  if (listLine.includes("|| true") || !listLine.startsWith("if ! ")) {
+    throw new Error(
+      "Dependabot auto-merge must fail when gh run list fails, instead of retrying it as a run that does not exist yet",
+    );
+  }
+  if (
+    watchLine !==
+    `gh run watch "$run_id" ${repositorySelector} --exit-status --interval 20`
+  ) {
+    throw new Error(
+      "Dependabot auto-merge must watch the ci workflow run for the pull request head, with a failing watch that no shell fallback or continue-on-error can neutralize",
+    );
+  }
+  if (
+    !/printf 'gh run list failed for %s: %s\\n' "\$head_sha" "\$output" >&2\n\s*exit 1/.test(
+      run,
+    )
+  ) {
+    throw new Error(
+      "Dependabot auto-merge must name the failed gh run list and exit non-zero, instead of polling on as if the run did not exist yet",
+    );
+  }
+  if (
+    !/if \[ -z "\$run_id" \]; then\n\s*printf 'no ci workflow run exists for %s[^\n]*\n\s*exit 1\n\s*fi/.test(
+      run,
+    )
+  ) {
+    throw new Error(
+      "Dependabot auto-merge must report a head commit with no ci run and exit non-zero, instead of failing a bare empty test",
+    );
+  }
+}
+
 function validateAutoMergeWorkflow(source: string): void {
   if (
     source.includes("actions/checkout") ||
@@ -156,23 +229,8 @@ function validateAutoMergeWorkflow(source: string): void {
       "Dependabot auto-merge must not roll up every check on the pull request head, because that rollup includes the auto-merge run itself",
     );
   }
-  const watchesHeadRun =
-    awaitRun.includes("${{ github.event.pull_request.head.sha }}") &&
-    awaitRun
-      .split("\n")
-      .some(
-        (line) =>
-          line.includes("gh run list") &&
-          line.includes("--workflow ci.yml") &&
-          line.includes('--commit "$head_sha"'),
-      ) &&
-    awaitRun
-      .split("\n")
-      .some(
-        (line) =>
-          line.trim() === 'gh run watch "$run_id" --exit-status --interval 20',
-      );
-  if (!watchesHeadRun || "continue-on-error" in await_) {
+  validateAwaitRun(awaitRun);
+  if ("continue-on-error" in await_) {
     throw new Error(
       "Dependabot auto-merge must watch the ci workflow run for the pull request head, with a failing watch that no shell fallback or continue-on-error can neutralize",
     );
@@ -305,12 +363,53 @@ describe("Dependabot auto-merge workflow", () => {
 
   it("rejects waiting on the whole check rollup again", () => {
     const mutated = autoMergeSource.replace(
-      'gh run watch "$run_id" --exit-status --interval 20',
+      `gh run watch "$run_id" ${repositorySelector} --exit-status --interval 20`,
       'gh pr checks "$PR_URL" --watch --fail-fast --interval 20',
     );
     expect(mutated).not.toBe(autoMergeSource);
     expect(() => validateAutoMergeWorkflow(mutated)).toThrow(
       "must not roll up every check on the pull request head",
+    );
+  });
+
+  it.each([
+    ["the repository selector", `${repositorySelector} `, "must pass --repo"],
+    ["--limit 1", "--limit 1 ", "with --limit 1"],
+    ["--json databaseId", "--json databaseId ", "with --json databaseId"],
+    ["--jq", "--jq ", "with --jq"],
+  ])("rejects dropping %s from the poll", (_name, fragment, message) => {
+    const mutated = autoMergeSource.replaceAll(fragment, "");
+    expect(mutated).not.toBe(autoMergeSource);
+    expect(() => validateAutoMergeWorkflow(mutated)).toThrow(message);
+  });
+
+  it("rejects a poll that swallows a failed gh run list", () => {
+    const mutated = autoMergeSource.replace('2>&1)"', '2>&1 || true)"');
+    expect(mutated).not.toBe(autoMergeSource);
+    expect(() => validateAutoMergeWorkflow(mutated)).toThrow(
+      "must fail when gh run list fails",
+    );
+  });
+
+  it("rejects retrying a hard gh failure as a missing run", () => {
+    const mutated = autoMergeSource.replace(
+      '              printf \'gh run list failed for %s: %s\\n\' "$head_sha" "$output" >&2\n              exit 1\n',
+      "",
+    );
+    expect(mutated).not.toBe(autoMergeSource);
+    expect(() => validateAutoMergeWorkflow(mutated)).toThrow(
+      "must name the failed gh run list and exit non-zero",
+    );
+  });
+
+  it("rejects an empty run id with no diagnostic", () => {
+    const mutated = autoMergeSource.replace(
+      'if [ -z "$run_id" ]; then',
+      "if false; then",
+    );
+    expect(mutated).not.toBe(autoMergeSource);
+    expect(() => validateAutoMergeWorkflow(mutated)).toThrow(
+      "must report a head commit with no ci run and exit non-zero",
     );
   });
 
@@ -321,7 +420,7 @@ describe("Dependabot auto-merge workflow", () => {
     );
     expect(mutated).not.toBe(autoMergeSource);
     expect(() => validateAutoMergeWorkflow(mutated)).toThrow(
-      "must watch the ci workflow run for the pull request head",
+      "must select exactly one ci run for the pull request head",
     );
   });
 
@@ -332,7 +431,7 @@ describe("Dependabot auto-merge workflow", () => {
     );
     expect(mutated).not.toBe(autoMergeSource);
     expect(() => validateAutoMergeWorkflow(mutated)).toThrow(
-      "must watch the ci workflow run for the pull request head",
+      "must select exactly one ci run for the pull request head",
     );
   });
 
