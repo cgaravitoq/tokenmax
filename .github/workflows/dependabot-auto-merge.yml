@@ -16,6 +16,7 @@ jobs:
       github.repository == 'cgaravitoq/tokenmax' &&
       github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PR_URL: ${{ github.event.pull_request.html_url }}
@@ -29,13 +30,24 @@ jobs:
       - name: Await CI conclusion
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' && !contains(steps.metadata.outputs.dependency-names, 'ccusage')
         run: |
+          head_sha="${{ github.event.pull_request.head.sha }}"
+          run_id=""
           for _ in $(seq 30); do
-            if [ "$(gh pr checks "$PR_URL" --json state --jq 'length' 2>/dev/null || echo 0)" != "0" ]; then
+            if ! output="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$head_sha" --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>&1)"; then
+              printf 'gh run list failed for %s: %s\n' "$head_sha" "$output" >&2
+              exit 1
+            fi
+            run_id="$output"
+            if [ -n "$run_id" ]; then
               break
             fi
             sleep 10
           done
-          gh pr checks "$PR_URL" --watch --fail-fast --interval 20
+          if [ -z "$run_id" ]; then
+            printf 'no ci workflow run exists for %s after 30 attempts\n' "$head_sha" >&2
+            exit 1
+          fi
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status --interval 20
 
       - name: Squash merge verified patch
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' && !contains(steps.metadata.outputs.dependency-names, 'ccusage')

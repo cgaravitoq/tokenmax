@@ -96,6 +96,7 @@ function pinnedAction(step: UnknownRecord, context: string): string {
 interface ExpectedStep {
   name?: string;
   id?: string;
+  if?: string;
   uses?: string;
   run?: string;
   "working-directory"?: string;
@@ -163,6 +164,51 @@ function expectedDeployJob(
   };
 }
 
+interface ExpectedCiJob {
+  name: string;
+  "runs-on": string;
+  steps: ExpectedStep[];
+}
+
+function expectedCiJob(actions: SetupActions): ExpectedCiJob {
+  return {
+    name: "Build & Check",
+    "runs-on": "ubuntu-latest",
+    steps: [
+      { uses: actions.checkout },
+      { uses: actions.setupNode, with: { "node-version": "24.19.0" } },
+      { uses: actions.setupBun, with: { "bun-version": "1.4.0" } },
+      {
+        name: cacheStepName,
+        uses: cacheAction,
+        with: {
+          path: "~/.bun/install/cache",
+          key: "${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}",
+          "restore-keys": "${{ runner.os }}-bun-",
+        },
+      },
+      { name: "Install dependencies", run: "bun install --frozen-lockfile" },
+      {
+        name: "Lint pull request title",
+        if: "github.event_name == 'pull_request'",
+        run: `printf '%s' "$PR_TITLE" | bunx commitlint`,
+        env: { PR_TITLE: "${{ github.event.pull_request.title }}" },
+      },
+      { name: "Format & Lint (Biome)", run: "bun run format" },
+      { name: "Lint anti-slop (oxlint)", run: "bun run lint:slop" },
+      { name: "TypeScript check", run: "bun run check-types" },
+      { name: "Test", run: "bun run test" },
+      { name: "Test dependency policy", run: "bun run test:dependency-policy" },
+      { name: "Test packed package", run: "bun run test:package" },
+      {
+        name: "Audit production dependencies",
+        run: "bun run audit:production",
+      },
+      { name: "Build", run: "bun run build" },
+    ],
+  };
+}
+
 function validateWorkflow(source: string): void {
   let workflow: UnknownRecord;
   try {
@@ -214,6 +260,15 @@ function validateWorkflow(source: string): void {
       );
     }
   }
+
+  const ciJob = record(jobs.ci, "ci job");
+  try {
+    expect(ciJob).toEqual(expectedCiJob(actions));
+  } catch (cause) {
+    throw new Error(
+      `Job ci must match the reviewed ci job exactly: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+  }
 }
 
 function validateCachedDependencies(jobs: UnknownRecord): void {
@@ -244,7 +299,7 @@ function expectTopLevel(
 const goldenFailure = "must match the reviewed deploy job exactly";
 
 describe("CI deploy jobs", () => {
-  it("pins the deploy job as a golden object", () => {
+  it("pins the ci and deploy jobs as golden objects", () => {
     expect(() => validateWorkflow(workflowSource)).not.toThrow();
   });
 
@@ -414,6 +469,50 @@ describe("CI deploy jobs", () => {
     expect(mutated).not.toBe(workflowSource);
     expect(() => validateWorkflow(mutated)).toThrow(
       `Job deploy ${goldenFailure}`,
+    );
+  });
+
+  it("rejects dropping a gate from the ci job", () => {
+    const mutated = workflowSource.replace(
+      "      - name: Audit production dependencies\n        run: bun run audit:production\n",
+      "",
+    );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "Job ci must match the reviewed ci job exactly",
+    );
+  });
+
+  it("rejects neutering a gate in the ci job", () => {
+    const mutated = workflowSource.replace(
+      "      - name: Test\n        run: bun run test\n",
+      "      - name: Test\n        run: echo skipped\n",
+    );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "Job ci must match the reviewed ci job exactly",
+    );
+  });
+
+  it("rejects reordering the ci gates", () => {
+    const mutated = workflowSource.replace(
+      "      - name: Test dependency policy\n        run: bun run test:dependency-policy\n\n      - name: Test packed package\n        run: bun run test:package\n",
+      "      - name: Test packed package\n        run: bun run test:package\n\n      - name: Test dependency policy\n        run: bun run test:dependency-policy\n",
+    );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "Job ci must match the reviewed ci job exactly",
+    );
+  });
+
+  it("rejects skipping the pull request title lint", () => {
+    const mutated = workflowSource.replace(
+      "        if: github.event_name == 'pull_request'\n",
+      "",
+    );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "Job ci must match the reviewed ci job exactly",
     );
   });
 
