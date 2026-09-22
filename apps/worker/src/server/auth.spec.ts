@@ -663,3 +663,17 @@ describe("POST /api/keys/rotate", () => {
     await expect(accepted.json()).resolves.toEqual({ accepted: 1 });
   });
 });
+
+describe("the api_keys user_id index", () => {
+  it("serves the sign-in revocation", () => {
+    const sqlite = database();
+    const plan = sqlite.query<{ detail: string }>(
+      "EXPLAIN QUERY PLAN UPDATE api_keys SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = (SELECT id FROM users WHERE github_login = ?) AND revoked_at IS NULL",
+      "octocat",
+    );
+
+    expect(plan.map(({ detail }) => detail).join("\n")).toContain(
+      "api_keys_user_id",
+    );
+  });
+});
