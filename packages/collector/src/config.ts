@@ -2,7 +2,7 @@ import fsp from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
 
-export const collectorTarget = z.object({
+const collectorTarget = z.object({
   key: z.string().min(1),
   url: z.url({ protocol: /^https?$/ }),
 });
