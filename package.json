@@ -6,7 +6,7 @@
     "@commitlint/config-conventional": "^21.2.2",
     "husky": "^9.1.7",
     "lint-staged": "^17.5.1",
-    "oxlint": "1.82.0",
+    "oxlint": "1.83.0",
     "typescript": "6.0.3",
     "ultracite": "7.12.0"
   },
