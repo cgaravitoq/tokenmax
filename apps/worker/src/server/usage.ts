@@ -58,17 +58,6 @@ export interface UsageSummary {
   days: UsageDaySummary[];
 }
 
-interface UsageRow {
-  date: string;
-  provider: string;
-  model: string;
-  input: number;
-  output: number;
-  cache_create: number;
-  cache_read: number;
-  cost_usd: number;
-}
-
 interface UsageAmount {
   tokens: number;
   cost_usd: number;
@@ -76,6 +65,11 @@ interface UsageAmount {
 
 interface ProviderUsage extends UsageAmount {
   models: Map<string, UsageAmount>;
+}
+
+interface FoundUser {
+  id: number;
+  login: string;
 }
 
 const platformUuid =
@@ -94,17 +88,28 @@ export function canonicalMachineId(machine: string): string {
 
 const encoder = new TextEncoder();
 
+export const d1BatchLimit = 1000;
+
+async function runBatches(
+  db: D1Database,
+  statements: D1PreparedStatement[],
+): Promise<void> {
+  for (let start = 0; start < statements.length; start += d1BatchLimit) {
+    await db.batch(statements.slice(start, start + d1BatchLimit));
+  }
+}
+
 const upsertDaySql = `INSERT INTO usage_days (
   user_id, machine_id, date, provider, model, input, output, cache_create,
   cache_read, cost_usd
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (user_id, machine_id, date, provider, model) DO UPDATE SET
-  input = max(input, excluded.input),
-  output = max(output, excluded.output),
-  cache_create = max(cache_create, excluded.cache_create),
-  cache_read = max(cache_read, excluded.cache_read),
-  cost_usd = max(cost_usd, excluded.cost_usd),
+  input = excluded.input,
+  output = excluded.output,
+  cache_create = excluded.cache_create,
+  cache_read = excluded.cache_read,
+  cost_usd = excluded.cost_usd,
   updated_at = CURRENT_TIMESTAMP`;
 
 export async function hashApiKey(key: string): Promise<string> {
@@ -135,27 +140,13 @@ export async function recordUsage(
 ): Promise<void> {
   const timezone = report.timezone ?? "UTC";
   const machine = canonicalMachineId(report.machine);
-  const stored = await db
-    .prepare(
-      "SELECT timezone FROM machines WHERE user_id = ? AND machine_id = ?",
-    )
-    .bind(userId, machine)
-    .first<{ timezone: string }>();
-  const earliest = report.days.reduce(
-    (min, day) => (day.date < min ? day.date : min),
-    report.days[0].date,
-  );
 
-  await db.batch([
-    ...(stored !== null && stored.timezone !== timezone
-      ? [
-          db
-            .prepare(
-              "DELETE FROM usage_days WHERE user_id = ? AND machine_id = ? AND date >= ?",
-            )
-            .bind(userId, machine, earliest),
-        ]
-      : []),
+  await runBatches(db, [
+    db
+      .prepare(
+        "DELETE FROM usage_days WHERE user_id = ? AND machine_id = ? AND (SELECT timezone FROM machines WHERE user_id = ? AND machine_id = ?) <> ?",
+      )
+      .bind(userId, machine, userId, machine, timezone),
     db
       .prepare(
         "INSERT INTO machines (user_id, machine_id, last_seen, timezone) VALUES (?, ?, ?, ?) ON CONFLICT (user_id, machine_id) DO UPDATE SET last_seen = excluded.last_seen, timezone = excluded.timezone",
@@ -183,12 +174,12 @@ export async function recordUsage(
 async function findUserId(
   db: D1Database,
   login: string,
-): Promise<number | null> {
+): Promise<FoundUser | null> {
   const row = await db
-    .prepare("SELECT id FROM users WHERE github_login = ?")
-    .bind(login)
-    .first<{ id: number }>();
-  return row?.id ?? null;
+    .prepare("SELECT id, github_login FROM users WHERE github_login = ?")
+    .bind(login.toLowerCase())
+    .first<{ id: number; github_login: string }>();
+  return row === null ? null : { id: row.id, login: row.github_login };
 }
 
 function rangeDays(range: UsageRange): number {
@@ -239,10 +230,10 @@ export async function summarizeUsage(
   range: UsageRange,
   now: Date,
 ): Promise<UsageSummary | null> {
-  const userId = await findUserId(db, login);
-  if (userId === null) return null;
+  const user = await findUserId(db, login);
+  if (user === null) return null;
 
-  const timezone = await machineTimezone(db, userId);
+  const timezone = await machineTimezone(db, user.id);
   const { from, to } = windowFor(range, now, timezone);
   const rows = await db
     .prepare(
@@ -253,8 +244,8 @@ export async function summarizeUsage(
       WHERE user_id = ? AND date >= ? AND date <= ?
       GROUP BY date, provider, model`,
     )
-    .bind(userId, from, to)
-    .all<UsageRow>();
+    .bind(user.id, from, to)
+    .all<UsageDayReport>();
 
   const totals: UsageTotals = {
     input: 0,
@@ -296,7 +287,7 @@ export async function summarizeUsage(
   }
 
   return {
-    login,
+    login: user.login,
     range,
     from,
     to,

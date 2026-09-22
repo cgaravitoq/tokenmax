@@ -544,6 +544,19 @@ describe("GET /api/u/:login/summary", () => {
     });
   });
 
+  it("resolves a login whatever its case", async () => {
+    const db = await recorded();
+    const mixed = await app.request("/api/u/Octocat/summary", undefined, {
+      DB: db,
+    });
+    const lower = await app.request("/api/u/octocat/summary", undefined, {
+      DB: db,
+    });
+
+    expect(mixed.status).toBe(200);
+    await expect(mixed.json()).resolves.toEqual(await lower.json());
+  });
+
   it("rejects an unknown range", async () => {
     const response = await app.request(
       "/api/u/octocat/summary?range=year",

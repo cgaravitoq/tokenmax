@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { UsageDayReport, UsageRange, UsageReport } from "@/server/usage";
 import {
   authenticateApiKey,
   canonicalMachineId,
+  d1BatchLimit,
   hashApiKey,
   recordUsage,
   summarizeUsage,
@@ -113,7 +114,7 @@ describe("authenticateApiKey", () => {
 });
 
 describe("recordUsage", () => {
-  it("keeps the stored numbers when a report repeats lower ones", async () => {
+  it("stores a day whose value drops lower", async () => {
     const sqlite = database();
     const db = sqlite.asD1();
     const userId = seedUser(sqlite);
@@ -137,16 +138,16 @@ describe("recordUsage", () => {
     expect(storedUsage(sqlite)).toEqual([
       {
         machine_id: "mac-1",
-        input: 10,
-        output: 20,
-        cache_create: 5,
-        cache_read: 40,
-        cost_usd: 0.5,
+        input: 3,
+        output: 4,
+        cache_create: 1,
+        cache_read: 2,
+        cost_usd: 0.1,
       },
     ]);
   });
 
-  it("raises each stored number independently", async () => {
+  it("replaces every stored number from the last report", async () => {
     const sqlite = database();
     const db = sqlite.asD1();
     const userId = seedUser(sqlite);
@@ -155,18 +156,26 @@ describe("recordUsage", () => {
     await recordUsage(
       db,
       userId,
-      report("mac-1", [day({ input: 30, output: 5, cost_usd: 0.9 })]),
+      report("mac-1", [
+        day({
+          input: 7,
+          output: 5,
+          cache_create: 2,
+          cache_read: 3,
+          cost_usd: 0.2,
+        }),
+      ]),
       reportedAt,
     );
 
     expect(storedUsage(sqlite)).toEqual([
       {
         machine_id: "mac-1",
-        input: 30,
-        output: 20,
-        cache_create: 5,
-        cache_read: 40,
-        cost_usd: 0.9,
+        input: 7,
+        output: 5,
+        cache_create: 2,
+        cache_read: 3,
+        cost_usd: 0.2,
       },
     ]);
   });
@@ -234,9 +243,10 @@ describe("recordUsage", () => {
     ]);
   });
 
-  it("writes nothing when one day of the report fails", async () => {
+  it("writes nothing when one statement of the batch fails", async () => {
     const sqlite = database();
     const db = sqlite.asD1();
+    const batch = vi.spyOn(db, "batch");
     const userId = seedUser(sqlite);
 
     await expect(
@@ -251,6 +261,8 @@ describe("recordUsage", () => {
       ),
     ).rejects.toThrow();
 
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect(batch.mock.calls[0]?.[0]).toHaveLength(4);
     expect(sqlite.query("SELECT * FROM machines")).toEqual([]);
     expect(sqlite.query("SELECT * FROM usage_days")).toEqual([]);
   });
@@ -319,10 +331,10 @@ describe("recordUsage", () => {
       "day",
       new Date("2026-09-10T12:00:00.000Z"),
     );
-    expect(repeated?.totals.input).toBe(60);
+    expect(repeated?.totals.input).toBe(50);
   });
 
-  it("replaces from the earliest reported date and only for that machine", async () => {
+  it("replaces every bucket of a machine when its timezone changes", async () => {
     const sqlite = database();
     const db = sqlite.asD1();
     const userId = seedUser(sqlite);
@@ -359,11 +371,102 @@ describe("recordUsage", () => {
         "SELECT machine_id, date, input FROM usage_days ORDER BY machine_id, date",
       ),
     ).toEqual([
-      { machine_id: "mac-1", date: "2026-09-01", input: 5 },
       { machine_id: "mac-1", date: "2026-09-10", input: 60 },
       { machine_id: "mac-1", date: "2026-09-11", input: 70 },
       { machine_id: "mac-2", date: "2026-09-10", input: 7 },
     ]);
+  });
+
+  it("a timezone change leaves no row in the old zone", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const userId = seedUser(sqlite);
+
+    await recordUsage(
+      db,
+      userId,
+      report("mac-1", [tokensDay("2026-09-01", 5)], "UTC"),
+      reportedAt,
+    );
+    await recordUsage(
+      db,
+      userId,
+      report(
+        "mac-1",
+        [tokensDay("2026-09-11", 70), tokensDay("2026-09-10", 60)],
+        "Europe/Madrid",
+      ),
+      new Date("2026-09-11T08:00:00.000Z"),
+    );
+
+    expect(
+      sqlite.query<{ date: string; input: number }>(
+        "SELECT date, input FROM usage_days ORDER BY date",
+      ),
+    ).toEqual([
+      { date: "2026-09-10", input: 60 },
+      { date: "2026-09-11", input: 70 },
+    ]);
+  });
+
+  function manyDays(count: number): UsageDayReport[] {
+    return Array.from({ length: count }, (_, index) =>
+      tokensDay(
+        new Date(Date.UTC(2021, 0, 1 + index)).toISOString().slice(0, 10),
+        1,
+      ),
+    );
+  }
+
+  it("stores a 1200-row report in batches of at most 1000 statements", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const batch = vi.spyOn(db, "batch");
+    const userId = seedUser(sqlite);
+
+    await recordUsage(db, userId, report("mac-1", manyDays(1200)), reportedAt);
+
+    const sizes = batch.mock.calls.map(([statements]) => statements.length);
+    expect(sizes.length).toBeGreaterThan(1);
+    for (const size of sizes) expect(size).toBeLessThanOrEqual(1000);
+    expect(sqlite.query("SELECT date FROM usage_days")).toHaveLength(1200);
+  });
+
+  it("keeps the batches before the one that fails", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const userId = seedUser(sqlite);
+    const days = manyDays(d1BatchLimit + 1);
+    days[d1BatchLimit] = { ...days[d1BatchLimit], cost_usd: Number.NaN };
+    const committed = days.slice(0, d1BatchLimit - 2).map(({ date }) => date);
+
+    await expect(
+      recordUsage(db, userId, report("mac-1", days), reportedAt),
+    ).rejects.toThrow();
+
+    const stored = sqlite.query<{ date: string }>(
+      "SELECT date FROM usage_days ORDER BY date",
+    );
+    expect(stored.map(({ date }) => date)).toEqual(committed);
+
+    days[d1BatchLimit] = tokensDay(days[d1BatchLimit].date, 1);
+    await recordUsage(db, userId, report("mac-1", days), reportedAt);
+
+    expect(sqlite.query("SELECT date FROM usage_days")).toHaveLength(
+      d1BatchLimit + 1,
+    );
+  });
+
+  it("rejects a batch above the D1 statement limit", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const statements = Array.from({ length: 1001 }, () =>
+      db.prepare("SELECT 1"),
+    );
+
+    await expect(db.batch(statements)).rejects.toThrow(
+      "exceeds the 1000-statement limit",
+    );
   });
 });
 
@@ -990,5 +1093,103 @@ describe("the canonical machine id migration", () => {
     expect(
       sqlite.query("SELECT machine_id FROM machines ORDER BY machine_id"),
     ).toEqual([{ machine_id: uuid }, { machine_id: "windows-box" }]);
+  });
+});
+
+describe("the lowercase login migration", () => {
+  function seedCaseCollision(): SqliteD1TestDatabase {
+    const sqlite = new SqliteD1TestDatabase();
+    databases.push(sqlite);
+    sqlite.applyMigrations([
+      "0001_create_usage.sql",
+      "0002_add_machine_timezone.sql",
+      "0003_canonical_machine_id.sql",
+    ]);
+    sqlite.exec(`
+      INSERT INTO users (id, github_login, avatar_url) VALUES
+        (1, 'OctoCat', 'https://example.com/avatar.png'),
+        (2, 'octocat', 'https://example.com/avatar.png'),
+        (3, 'Solo', 'https://example.com/avatar.png');
+      INSERT INTO api_keys (key_hash, user_id, created_at) VALUES
+        ('old-key', 1, '2026-09-01 08:00:00'),
+        ('new-key', 2, '2026-09-10 09:00:00'),
+        ('solo-key-a', 3, '2026-09-05 08:00:00'),
+        ('solo-key-b', 3, '2026-09-06 08:00:00');
+      INSERT INTO machines (user_id, machine_id, last_seen, timezone) VALUES
+        (1, 'mac-1', '2026-09-01T00:00:00.000Z', 'UTC'),
+        (2, 'mac-1', '2026-09-10T00:00:00.000Z', 'Europe/Madrid');
+      INSERT INTO usage_days (
+        user_id, machine_id, date, provider, model, input, output, cache_create,
+        cache_read, cost_usd, updated_at
+      ) VALUES
+        (1, 'mac-1', '2026-09-10', 'anthropic', 'claude-opus-5', 10, 0, 0, 0, 1,
+          '2026-09-10 08:00:00'),
+        (2, 'mac-1', '2026-09-10', 'anthropic', 'claude-opus-5', 20, 0, 0, 0, 2,
+          '2026-09-10 09:00:00'),
+        (1, 'mac-1', '2026-09-01', 'anthropic', 'claude-opus-5', 5, 0, 0, 0, 0.5,
+          '2026-09-01 08:00:00'),
+        (2, 'mac-2', '2026-09-11', 'anthropic', 'claude-opus-5', 7, 0, 0, 0, 0.7,
+          '2026-09-11 08:00:00');
+    `);
+    return sqlite;
+  }
+
+  it("merges two logins that differ only in case", () => {
+    const sqlite = seedCaseCollision();
+
+    sqlite.applyMigrations(["0004_lowercase_github_login.sql"]);
+
+    expect(
+      sqlite.query("SELECT id, github_login FROM users ORDER BY id"),
+    ).toEqual([
+      { id: 1, github_login: "octocat" },
+      { id: 3, github_login: "solo" },
+    ]);
+    expect(
+      sqlite.query(
+        "SELECT user_id, last_seen, timezone FROM machines ORDER BY machine_id",
+      ),
+    ).toEqual([
+      {
+        user_id: 1,
+        last_seen: "2026-09-10T00:00:00.000Z",
+        timezone: "Europe/Madrid",
+      },
+    ]);
+    expect(
+      sqlite.query("SELECT user_id, date, input FROM usage_days ORDER BY date"),
+    ).toEqual([
+      { user_id: 1, date: "2026-09-01", input: 5 },
+      { user_id: 1, date: "2026-09-10", input: 20 },
+      { user_id: 1, date: "2026-09-11", input: 7 },
+    ]);
+    expect(
+      sqlite.query(
+        "SELECT key_hash, user_id FROM api_keys WHERE user_id = 1 ORDER BY key_hash",
+      ),
+    ).toEqual([
+      { key_hash: "new-key", user_id: 1 },
+      { key_hash: "old-key", user_id: 1 },
+    ]);
+    expect(
+      sqlite.query(
+        "SELECT key_hash FROM api_keys WHERE user_id = 1 AND revoked_at IS NULL",
+      ),
+    ).toEqual([{ key_hash: "new-key" }]);
+  });
+
+  it("leaves the keys of a login that never collided live", () => {
+    const sqlite = seedCaseCollision();
+
+    sqlite.applyMigrations(["0004_lowercase_github_login.sql"]);
+
+    expect(
+      sqlite.query(
+        "SELECT key_hash FROM api_keys WHERE user_id = 3 AND revoked_at IS NULL ORDER BY key_hash",
+      ),
+    ).toEqual([{ key_hash: "solo-key-a" }, { key_hash: "solo-key-b" }]);
+    expect(
+      sqlite.query("SELECT id, github_login FROM users WHERE id = 3"),
+    ).toEqual([{ id: 3, github_login: "solo" }]);
   });
 });

@@ -18,8 +18,6 @@ import {
 
 const maxReportBytes = 1024 * 1024;
 
-const encoder = new TextEncoder();
-
 const calendarDate = z
   .string("invalid date")
   .regex(/^\d{4}-\d{2}-\d{2}$/, "invalid date")
@@ -93,7 +91,20 @@ const githubProfile = z.object({
   avatar_url: z.string(),
 });
 
+const oauthTimeout = 10_000;
+
 export const app = new Hono<{ Bindings: Cloudflare.Env }>();
+
+async function oauthFetch(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(oauthTimeout),
+    });
+  } catch {
+    return new Response(null, { status: 502 });
+  }
+}
 
 function callbackUrl(requestUrl: string): string {
   return `${new URL(requestUrl).origin}/auth/github/callback`;
@@ -150,12 +161,12 @@ app.post("/api/report", async (context) => {
   if (declaredLength > maxReportBytes) {
     return context.json({ error: "payload too large" }, 413);
   }
-  const body = await context.req.text();
-  if (encoder.encode(body).byteLength > maxReportBytes) {
+  const body = await context.req.arrayBuffer();
+  if (body.byteLength > maxReportBytes) {
     return context.json({ error: "payload too large" }, 413);
   }
 
-  const parsed = parseReport(body);
+  const parsed = parseReport(new TextDecoder().decode(body));
   if (!parsed.ok) {
     return context.json({ error: parsed.error }, 400);
   }
@@ -214,7 +225,7 @@ app.get("/auth/github/callback", async (context) => {
     return context.json({ error: "invalid state" }, 400);
   }
 
-  const exchange = await fetch(exchangeEndpoint, {
+  const exchange = await oauthFetch(exchangeEndpoint, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -232,7 +243,7 @@ app.get("/auth/github/callback", async (context) => {
     return context.json({ error: "github exchange failed" }, 502);
   }
 
-  const profile = await fetch(profileEndpoint, {
+  const profile = await oauthFetch(profileEndpoint, {
     headers: {
       Authorization: `Bearer ${token.data.access_token}`,
       Accept: "application/vnd.github+json",
@@ -277,11 +288,6 @@ app.post("/api/keys/rotate", async (context) => {
   }
 
   const newKey = generateApiKey();
-  await rotateApiKey(
-    context.env.DB,
-    await hashApiKey(key),
-    userId,
-    await hashApiKey(newKey),
-  );
+  await rotateApiKey(context.env.DB, userId, await hashApiKey(newKey));
   return context.json({ key: newKey });
 });
