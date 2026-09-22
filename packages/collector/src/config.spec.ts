@@ -80,6 +80,21 @@ describe("readConfig", () => {
     expect(await readConfig(configFile)).toMatchObject({ kind: "invalid" });
   });
 
+  it("rejects a non-canonical stored timezone with a named error", async () => {
+    await writeFile(
+      configFile,
+      JSON.stringify({
+        targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
+        timezone: "Mars/Olympus",
+      }),
+    );
+
+    expect(await readConfig(configFile)).toEqual({
+      kind: "invalid",
+      message: `invalid tokenmax config at ${configFile}: timezone: invalid timezone`,
+    });
+  });
+
   it("is missing when there is no file", async () => {
     expect(await readConfig(configFile)).toEqual({ kind: "missing" });
   });

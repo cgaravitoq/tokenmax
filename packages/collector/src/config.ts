@@ -7,7 +7,10 @@ export const collectorTarget = z.object({
   url: z.url({ protocol: /^https?$/ }),
 });
 
-const timezone = z.string().min(1).optional();
+const timezone = z
+  .string()
+  .refine((value) => canonicalTimezone(value) !== null, "invalid timezone")
+  .optional();
 
 export const collectorConfig = z.object({
   targets: z.array(collectorTarget).min(1),
