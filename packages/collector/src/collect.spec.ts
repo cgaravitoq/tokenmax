@@ -6,7 +6,7 @@ import { z } from "zod";
 import { antigravityConversationsDir } from "./antigravity";
 import { sinceArgument } from "./ccusage";
 import { type CollectResult, collect } from "./collect";
-import type { CommandRunner } from "./command";
+import { type CommandRunner, runCommand } from "./command";
 import { writeConfig } from "./config";
 import { devinTranscriptsDir } from "./devin";
 import type { Fetcher } from "./http";
@@ -544,7 +544,7 @@ describe("collect", () => {
     writeTranscript(join(transcripts, "ok.json"), [
       {
         at: new Date("2026-09-10T12:00:00.000Z"),
-        model: "swe-2-medium",
+        model: "claude-fable-5-1-high",
         output: 10,
         prompt: 10,
       },
@@ -573,6 +573,68 @@ describe("collect", () => {
       ],
     });
     expect(JSON.parse(String(requests[0].init.body)).days).toHaveLength(4);
+  });
+
+  it("warns once about a model the prices do not cover and reports its rows", async () => {
+    await writeConfig(paths.configFile, { targets: [target] });
+    const transcripts = devinTranscriptsDir(home);
+    await mkdir(transcripts, { recursive: true });
+    writeTranscript(join(transcripts, "ok.json"), [
+      {
+        at: new Date("2026-09-09T12:00:00.000Z"),
+        model: "brand-new-model-high",
+        output: 5,
+        prompt: 7,
+      },
+      {
+        at: new Date("2026-09-10T12:00:00.000Z"),
+        model: "brand-new-model-high",
+        output: 3,
+        prompt: 4,
+      },
+    ]);
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":2}'),
+        [],
+      ),
+      identity,
+      runner: dailyRunner('{"daily":[]}', []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+      timezone: "UTC",
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "abc-123",
+      targets: [{ accepted: 2, url }],
+      warnings: ["devin: no price for brand-new-model"],
+    });
+    expect(JSON.parse(String(requests[0].init.body)).days).toEqual([
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 0,
+        date: "2026-09-09",
+        input: 7,
+        model: "brand-new-model",
+        output: 5,
+        provider: "devin",
+      },
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 0,
+        date: "2026-09-10",
+        input: 4,
+        model: "brand-new-model",
+        output: 3,
+        provider: "devin",
+      },
+    ]);
   });
 
   it("leaves the prices alone when no Antigravity step is in the window", async () => {
@@ -785,6 +847,99 @@ describe("collect", () => {
     ]);
   });
 
+  it("gives up on a target that never answers", async () => {
+    await writeConfig(paths.configFile, { targets: [target] });
+
+    const result = await collect({
+      env: { home },
+      fetcher: async (_url, init) => {
+        const signal = init.signal;
+        if (signal === undefined || signal === null) {
+          throw new Error("the report fetch carries no signal");
+        }
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve());
+        });
+        signal.throwIfAborted();
+        throw new Error("the report fetch was not aborted");
+      },
+      identity,
+      requestTimeoutMs: 50,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      kind: "reported",
+      targets: [{ message: expect.stringMatching(/abort|timeout/i), url }],
+    });
+  });
+
+  it("slices a 2500 row report into requests of at most 1000 rows", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const daily = {
+      daily: Array.from({ length: 2500 }, (_, index) => ({
+        agents: [
+          {
+            agent: "claude",
+            modelBreakdowns: [
+              {
+                cacheCreationTokens: 0,
+                cacheReadTokens: 0,
+                cost: 0,
+                inputTokens: 1,
+                modelName: `model-${index}`,
+                outputTokens: 1,
+              },
+            ],
+          },
+        ],
+        period: new Date(Date.UTC(2026, 8, 1 + Math.floor(index / 200)))
+          .toISOString()
+          .slice(0, 10),
+      })),
+    };
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: async (url, init) => {
+        requests.push({ init, url });
+        const parsed = usageReport.safeParse(JSON.parse(String(init.body)));
+        if (!parsed.success) {
+          throw new Error(
+            parsed.error.issues
+              .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+              .join("; "),
+          );
+        }
+        return {
+          status: 200,
+          text: async () =>
+            JSON.stringify({ accepted: parsed.data.days.length }),
+        };
+      },
+      identity,
+      runner: dailyRunner(JSON.stringify(daily), []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "abc-123",
+      targets: [{ accepted: 2500, url }],
+      warnings: [],
+    });
+    expect(
+      requests.map(
+        (request) => JSON.parse(String(request.init.body)).days.length,
+      ),
+    ).toEqual([1000, 1000, 500]);
+  });
+
   it("reports nothing without calling tokenmax when there is no usage", async () => {
     await writeConfig(paths.configFile, { targets: [target] });
     const result = await collect({
@@ -796,6 +951,169 @@ describe("collect", () => {
     });
 
     expect(result).toEqual({ kind: "empty", warnings: [] });
+  });
+
+  it("still reports Antigravity and Devin rows when ccusage fails", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-09T12:00:00.000Z"),
+          input: 10,
+          modelCode: 1318,
+          output: 10,
+        },
+      ],
+    });
+    const transcripts = devinTranscriptsDir(home);
+    await mkdir(transcripts, { recursive: true });
+    writeTranscript(join(transcripts, "abiding-hall.json"), [
+      {
+        at: new Date("2026-09-09T12:00:00.000Z"),
+        model: "claude-fable-5-1-high",
+        output: 5,
+        prompt: 7,
+      },
+    ]);
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":2}'),
+        [],
+      ),
+      identity,
+      runner: async () => ({
+        exitCode: 2,
+        stderr: "native binary is not available\n",
+        stdout: "",
+      }),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "abc-123",
+      targets: [{ accepted: 2, url }],
+      warnings: [
+        "ccusage: ccusage exited with 2: native binary is not available",
+      ],
+    });
+    expect(JSON.parse(String(requests[0].init.body)).days).toEqual([
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 10 * 7.5e-7 + 10 * 3.75e-6,
+        date: "2026-09-09",
+        input: 10,
+        model: "gemini-3.8-flash",
+        output: 10,
+        provider: "antigravity",
+      },
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 7 * 1e-5 + 5 * 5e-5,
+        date: "2026-09-09",
+        input: 7,
+        model: "claude-fable-5-1",
+        output: 5,
+        provider: "devin",
+      },
+    ]);
+  });
+
+  it("reports a hung ccusage as a warning and keeps the local rows", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-09T12:00:00.000Z"),
+          input: 10,
+          modelCode: 1318,
+          output: 10,
+        },
+      ],
+    });
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":1}'),
+        [],
+      ),
+      identity,
+      runner: (_command, _args) =>
+        runCommand(process.execPath, ["-e", "setTimeout(() => {}, 8000)"], 200),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      kind: "reported",
+      targets: [{ accepted: 1, url }],
+      warnings: ["ccusage: ccusage exited with 1: timed out after 200ms"],
+    });
+    expect(JSON.parse(String(requests[0].init.body)).days).toHaveLength(1);
+  });
+
+  it("keeps the local warnings when the run fails", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-09T12:00:00.000Z"),
+          input: 10,
+          modelCode: 1318,
+          output: 10,
+        },
+      ],
+    });
+
+    const result = await collect({
+      env: { home },
+      fetcher: async (requestUrl) => {
+        if (requestUrl === litellmPricesUrl) {
+          throw new Error("offline");
+        }
+        throw new Error("collect must not report without a row");
+      },
+      identity,
+      runner: async () => ({
+        exitCode: 2,
+        stderr: "native binary is not available\n",
+        stdout: "",
+      }),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "failed",
+      message: "ccusage exited with 2: native binary is not available",
+      warnings: [
+        "ccusage: ccusage exited with 2: native binary is not available",
+        "antigravity: could not load model prices: offline",
+      ],
+    });
   });
 
   it("fails with the ccusage error when the command exits", async () => {
@@ -814,6 +1132,9 @@ describe("collect", () => {
     expect(result).toEqual({
       kind: "failed",
       message: "ccusage exited with 2: native binary is not available",
+      warnings: [
+        "ccusage: ccusage exited with 2: native binary is not available",
+      ],
     });
   });
 

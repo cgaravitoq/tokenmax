@@ -17,6 +17,7 @@ import { type MachineIdentity, machineId } from "./machine";
 import {
   antigravityProvider,
   devinProvider,
+  type MappedDays,
   mapAntigravitySteps,
   mapCcusageDays,
   mapDevinSteps,
@@ -29,6 +30,7 @@ export interface CollectOptions {
   identity: MachineIdentity;
   env?: CollectorEnv;
   fetcher?: Fetcher;
+  requestTimeoutMs?: number;
   runner?: CommandRunner;
   today?: Date;
   timezone?: string;
@@ -47,10 +49,13 @@ export type CollectResult =
     }
   | { kind: "empty"; warnings: string[] }
   | { kind: "missing-config"; configFile: string }
-  | { kind: "failed"; message: string };
+  | { kind: "failed"; message: string; warnings: string[] };
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+const fetchTimeoutMs = 30_000;
+const sliceSize = 1000;
 
 const reportUrl = (baseUrl: string): string =>
   `${baseUrl.replace(/\/+$/, "")}/api/report`;
@@ -76,13 +81,8 @@ function acceptedCount(body: string): number | null {
   return typeof accepted === "number" ? accepted : null;
 }
 
-interface LocalRows {
-  days: UsageDay[];
-  warnings: string[];
-}
-
 interface LocalSource<Step extends { at: Date }> {
-  map: (steps: Step[], timezone: string, prices: PriceTable) => UsageDay[];
+  map: (steps: Step[], timezone: string, prices: PriceTable) => MappedDays;
   provider: string;
   read: (home: string) => Promise<{ failures: string[]; steps: Step[] }>;
 }
@@ -91,6 +91,7 @@ interface LocalWindow {
   fetcher: Fetcher;
   home: string;
   pricesFile: string;
+  requestTimeoutMs: number;
   since: string;
   timezone: string;
   today: Date;
@@ -112,6 +113,7 @@ async function report(
   fetcher: Fetcher,
   target: CollectorTarget,
   body: string,
+  requestTimeoutMs: number,
 ): Promise<TargetResult> {
   const { url } = target;
   try {
@@ -122,6 +124,7 @@ async function report(
         "Content-Type": "application/json",
       },
       method: "POST",
+      signal: AbortSignal.timeout(requestTimeoutMs),
     });
     const answer = await response.text();
     if (response.status !== 200) {
@@ -143,10 +146,35 @@ async function report(
   }
 }
 
+async function reportTarget(
+  fetcher: Fetcher,
+  target: CollectorTarget,
+  usage: UsageReport,
+  requestTimeoutMs: number,
+): Promise<TargetResult> {
+  let accepted = 0;
+  for (let start = 0; start < usage.days.length; start += sliceSize) {
+    const result = await report(
+      fetcher,
+      target,
+      JSON.stringify({
+        ...usage,
+        days: usage.days.slice(start, start + sliceSize),
+      }),
+      requestTimeoutMs,
+    );
+    if ("message" in result) {
+      return result;
+    }
+    accepted += result.accepted;
+  }
+  return { accepted, url: target.url };
+}
+
 async function localDays<Step extends { at: Date }>(
   source: LocalSource<Step>,
   window: LocalWindow,
-): Promise<LocalRows> {
+): Promise<MappedDays> {
   try {
     const usage = await source.read(window.home);
     const warnings = usage.failures.map(
@@ -162,8 +190,13 @@ async function localDays<Step extends { at: Date }>(
       window.fetcher,
       window.pricesFile,
       window.today,
+      window.requestTimeoutMs,
     );
-    return { days: source.map(steps, window.timezone, prices), warnings };
+    const mapped = source.map(steps, window.timezone, prices);
+    return {
+      days: mapped.days,
+      warnings: [...warnings, ...mapped.warnings],
+    };
   } catch (error) {
     return {
       days: [],
@@ -180,7 +213,7 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
     return { configFile: paths.configFile, kind: "missing-config" };
   }
   if (config.kind === "invalid") {
-    return { kind: "failed", message: config.message };
+    return { kind: "failed", message: config.message, warnings: [] };
   }
 
   const machine = machineId(
@@ -191,9 +224,11 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
     config.config.timezone ?? options.timezone ?? runtimeTimezone();
   const runner = options.runner ?? runCommand;
   const fetcher = options.fetcher ?? fetch;
+  const requestTimeoutMs = options.requestTimeoutMs ?? fetchTimeoutMs;
   const today = options.today ?? new Date();
 
   let days: UsageDay[];
+  let ccusageFailure: string | null = null;
   try {
     const daily = await readCcusageDaily(
       runner,
@@ -202,13 +237,15 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
     );
     days = mapCcusageDays(daily);
   } catch (error) {
-    return { kind: "failed", message: messageOf(error) };
+    ccusageFailure = messageOf(error);
+    days = [];
   }
 
   const window: LocalWindow = {
     fetcher,
     home: env.home,
     pricesFile: paths.pricesFile,
+    requestTimeoutMs,
     since: windowStart(today, timezone),
     timezone,
     today,
@@ -221,16 +258,20 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
       (day) => !covered.has(providerDay(day)),
     ),
   );
-  const warnings = [...antigravity.warnings, ...devin.warnings];
+  const warnings =
+    ccusageFailure === null ? [] : [`ccusage: ${ccusageFailure}`];
+  warnings.push(...antigravity.warnings, ...devin.warnings);
   if (days.length === 0) {
+    if (ccusageFailure !== null) {
+      return { kind: "failed", message: ccusageFailure, warnings };
+    }
     return { kind: "empty", warnings };
   }
 
   const usage: UsageReport = { days, machine, timezone };
-  const body = JSON.stringify(usage);
   const targets: TargetResult[] = [];
   for (const target of config.config.targets) {
-    targets.push(await report(fetcher, target, body));
+    targets.push(await reportTarget(fetcher, target, usage, requestTimeoutMs));
   }
   return { kind: "reported", machine, targets, warnings };
 }

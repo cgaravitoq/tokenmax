@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -80,6 +80,70 @@ describe("readDevinSteps", () => {
         model: "claude-opus-5-high",
         output: 223,
       },
+    ]);
+  });
+
+  it("skips a step that reports more cached than prompt tokens", async () => {
+    writeTranscript(join(dir, "a.json"), [
+      {
+        at: new Date(0),
+        cacheCreate: 2000,
+        cacheRead: 5000,
+        model: "claude-opus-5-high",
+        output: 7,
+        prompt: 1000,
+      },
+      { at: new Date(0), model: "swe-2-medium", output: 1, prompt: 1 },
+    ]);
+
+    const usage = await readDevinSteps(dir);
+
+    expect(usage.steps).toEqual([
+      {
+        at: new Date(0),
+        cacheCreate: 0,
+        cacheRead: 0,
+        input: 1,
+        model: "swe-2-medium",
+        output: 1,
+      },
+    ]);
+    expect(usage.failures).toEqual([
+      `${join(dir, "a.json")}: step 3 reports more cached than prompt tokens`,
+    ]);
+  });
+
+  it("keeps a transcript whose step ids are not integers", async () => {
+    const file = join(dir, "a.json");
+    writeTranscript(file, [
+      { at: new Date(0), model: "swe-2-medium", output: 1, prompt: 1 },
+      {
+        at: new Date(0),
+        cacheRead: 5000,
+        model: "swe-2-medium",
+        output: 1,
+        prompt: 1000,
+      },
+    ]);
+    const transcript = JSON.parse(await readFile(file, "utf8"));
+    transcript.steps[2].step_id = "3";
+    transcript.steps[3].step_id = 3.5;
+    await writeFile(file, JSON.stringify(transcript));
+
+    const usage = await readDevinSteps(dir);
+
+    expect(usage.steps).toEqual([
+      {
+        at: new Date(0),
+        cacheCreate: 0,
+        cacheRead: 0,
+        input: 1,
+        model: "swe-2-medium",
+        output: 1,
+      },
+    ]);
+    expect(usage.failures).toEqual([
+      `${file}: step 3.5 reports more cached than prompt tokens`,
     ]);
   });
 
