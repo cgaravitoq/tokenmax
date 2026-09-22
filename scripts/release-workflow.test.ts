@@ -116,6 +116,13 @@ const expectedSteps: NamedStep[] = [
     step: { name: "Test packed package", run: "bun run test:package" },
   },
   {
+    label: "Audit production dependencies",
+    step: {
+      name: "Audit production dependencies",
+      run: "bun run audit:production",
+    },
+  },
+  {
     label: "Publish collector",
     step: {
       name: "Publish collector",
@@ -207,6 +214,17 @@ function validateWorkflow(source: string): void {
   }
 
   const releaseSteps = steps(job, "release job");
+  const publishIndex = releaseSteps.findIndex(
+    (step) => step.name === "Publish collector",
+  );
+  const auditIndex = releaseSteps.findIndex(
+    (step) => step.run === "bun run audit:production",
+  );
+  if (auditIndex === -1 || auditIndex > publishIndex) {
+    throw new Error(
+      "The release workflow must audit production dependencies before it publishes the tarball",
+    );
+  }
   if (releaseSteps.length !== expectedSteps.length) {
     throw new Error(
       `The release workflow must run exactly ${expectedSteps.length} steps but runs ${releaseSteps.length}`,
@@ -315,7 +333,34 @@ describe("release workflow", () => {
     );
     expect(mutated).not.toBe(workflowSource);
     expect(() => validateWorkflow(mutated)).toThrow(
-      "must run exactly 13 steps",
+      "must run exactly 14 steps",
+    );
+  });
+
+  it("rejects publishing without auditing production dependencies", () => {
+    const mutated = workflowSource.replace(
+      "      - name: Audit production dependencies\n        run: bun run audit:production\n\n",
+      "",
+    );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "must audit production dependencies before it publishes the tarball",
+    );
+  });
+
+  it("rejects auditing after the tarball is published", () => {
+    const mutated = workflowSource
+      .replace(
+        "      - name: Audit production dependencies\n        run: bun run audit:production\n\n      - name: Publish collector\n",
+        "      - name: Publish collector\n",
+      )
+      .replace(
+        "      - name: Create GitHub release\n",
+        "      - name: Audit production dependencies\n        run: bun run audit:production\n\n      - name: Create GitHub release\n",
+      );
+    expect(mutated).not.toBe(workflowSource);
+    expect(() => validateWorkflow(mutated)).toThrow(
+      "must audit production dependencies before it publishes the tarball",
     );
   });
 

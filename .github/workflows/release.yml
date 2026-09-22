@@ -55,6 +55,9 @@ jobs:
       - name: Test packed package
         run: bun run test:package
 
+      - name: Audit production dependencies
+        run: bun run audit:production
+
       - name: Publish collector
         working-directory: packages/collector
         run: |
