@@ -1068,7 +1068,7 @@ describe("the canonical machine id migration", () => {
 });
 
 describe("the lowercase login migration", () => {
-  it("lowercases a stored login", () => {
+  it("merges two logins that differ only in case", () => {
     const sqlite = new SqliteD1TestDatabase();
     databases.push(sqlite);
     sqlite.applyMigrations([
@@ -1076,14 +1076,61 @@ describe("the lowercase login migration", () => {
       "0002_add_machine_timezone.sql",
       "0003_canonical_machine_id.sql",
     ]);
-    sqlite.exec(
-      "INSERT INTO users (github_login, avatar_url) VALUES ('OctoCat', 'https://example.com/avatar.png')",
-    );
+    sqlite.exec(`
+      INSERT INTO users (id, github_login, avatar_url) VALUES
+        (1, 'OctoCat', 'https://example.com/avatar.png'),
+        (2, 'octocat', 'https://example.com/avatar.png');
+      INSERT INTO api_keys (key_hash, user_id, created_at) VALUES
+        ('old-key', 1, '2026-09-01 08:00:00'),
+        ('new-key', 2, '2026-09-10 09:00:00');
+      INSERT INTO machines (user_id, machine_id, last_seen, timezone) VALUES
+        (1, 'mac-1', '2026-09-01T00:00:00.000Z', 'UTC'),
+        (2, 'mac-1', '2026-09-10T00:00:00.000Z', 'Europe/Madrid');
+      INSERT INTO usage_days (
+        user_id, machine_id, date, provider, model, input, output, cache_create,
+        cache_read, cost_usd, updated_at
+      ) VALUES
+        (1, 'mac-1', '2026-09-10', 'anthropic', 'claude-opus-5', 10, 0, 0, 0, 1,
+          '2026-09-10 08:00:00'),
+        (2, 'mac-1', '2026-09-10', 'anthropic', 'claude-opus-5', 20, 0, 0, 0, 2,
+          '2026-09-10 09:00:00'),
+        (1, 'mac-1', '2026-09-01', 'anthropic', 'claude-opus-5', 5, 0, 0, 0, 0.5,
+          '2026-09-01 08:00:00'),
+        (2, 'mac-2', '2026-09-11', 'anthropic', 'claude-opus-5', 7, 0, 0, 0, 0.7,
+          '2026-09-11 08:00:00');
+    `);
 
     sqlite.applyMigrations(["0004_lowercase_github_login.sql"]);
 
-    expect(sqlite.query("SELECT github_login FROM users")).toEqual([
-      { github_login: "octocat" },
+    expect(sqlite.query("SELECT id, github_login FROM users")).toEqual([
+      { id: 1, github_login: "octocat" },
     ]);
+    expect(
+      sqlite.query(
+        "SELECT user_id, last_seen, timezone FROM machines ORDER BY machine_id",
+      ),
+    ).toEqual([
+      {
+        user_id: 1,
+        last_seen: "2026-09-10T00:00:00.000Z",
+        timezone: "Europe/Madrid",
+      },
+    ]);
+    expect(
+      sqlite.query("SELECT user_id, date, input FROM usage_days ORDER BY date"),
+    ).toEqual([
+      { user_id: 1, date: "2026-09-01", input: 5 },
+      { user_id: 1, date: "2026-09-10", input: 20 },
+      { user_id: 1, date: "2026-09-11", input: 7 },
+    ]);
+    expect(
+      sqlite.query("SELECT key_hash, user_id FROM api_keys ORDER BY key_hash"),
+    ).toEqual([
+      { key_hash: "new-key", user_id: 1 },
+      { key_hash: "old-key", user_id: 1 },
+    ]);
+    expect(
+      sqlite.query("SELECT key_hash FROM api_keys WHERE revoked_at IS NULL"),
+    ).toEqual([{ key_hash: "new-key" }]);
   });
 });
