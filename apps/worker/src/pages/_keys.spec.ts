@@ -19,17 +19,26 @@ beforeAll(async () => {
 
 async function render(
   headers?: HeadersInit,
-): Promise<{ html: string; cookies: string[] }> {
+): Promise<{ html: string; cookies: string[]; cacheControl: string | null }> {
   const response = await container.renderToResponse(KeysPage, {
     request: new Request("http://tokenmax.test/keys", { headers }),
   });
   return {
     html: await response.text(),
     cookies: [...App.getSetCookieFromResponse(response)],
+    cacheControl: response.headers.get("Cache-Control"),
   };
 }
 
 describe("GET /keys", () => {
+  it("forbids caching the page that shows the key", async () => {
+    const { cacheControl } = await render({
+      Cookie: `tokenmax_new_key=${key}`,
+    });
+
+    expect(cacheControl).toBe("no-store");
+  });
+
   it("shows the key once and deletes the cookie on /keys", async () => {
     const { html, cookies } = await render({
       Cookie: `tokenmax_new_key=${key}`,
