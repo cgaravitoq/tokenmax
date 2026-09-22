@@ -67,6 +67,11 @@ interface ProviderUsage extends UsageAmount {
   models: Map<string, UsageAmount>;
 }
 
+interface FoundUser {
+  id: number;
+  login: string;
+}
+
 const platformUuid =
   /[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 const linuxMachineId = /[0-9a-f]{32}$/;
@@ -169,7 +174,7 @@ export async function recordUsage(
 async function findUserId(
   db: D1Database,
   login: string,
-): Promise<{ id: number; login: string } | null> {
+): Promise<FoundUser | null> {
   const row = await db
     .prepare("SELECT id, github_login FROM users WHERE github_login = ?")
     .bind(login.toLowerCase())
