@@ -49,7 +49,7 @@ export type CollectResult =
     }
   | { kind: "empty"; warnings: string[] }
   | { kind: "missing-config"; configFile: string }
-  | { kind: "failed"; message: string };
+  | { kind: "failed"; message: string; warnings: string[] };
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -213,7 +213,7 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
     return { configFile: paths.configFile, kind: "missing-config" };
   }
   if (config.kind === "invalid") {
-    return { kind: "failed", message: config.message };
+    return { kind: "failed", message: config.message, warnings: [] };
   }
 
   const machine = machineId(
@@ -263,7 +263,7 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
   warnings.push(...antigravity.warnings, ...devin.warnings);
   if (days.length === 0) {
     if (ccusageFailure !== null) {
-      return { kind: "failed", message: ccusageFailure };
+      return { kind: "failed", message: ccusageFailure, warnings };
     }
     return { kind: "empty", warnings };
   }

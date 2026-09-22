@@ -1070,6 +1070,52 @@ describe("collect", () => {
     expect(JSON.parse(String(requests[0].init.body)).days).toHaveLength(1);
   });
 
+  it("keeps the local warnings when the run fails", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-09T12:00:00.000Z"),
+          input: 10,
+          modelCode: 1318,
+          output: 10,
+        },
+      ],
+    });
+
+    const result = await collect({
+      env: { home },
+      fetcher: async (requestUrl) => {
+        if (requestUrl === litellmPricesUrl) {
+          throw new Error("offline");
+        }
+        throw new Error("collect must not report without a row");
+      },
+      identity,
+      runner: async () => ({
+        exitCode: 2,
+        stderr: "native binary is not available\n",
+        stdout: "",
+      }),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "failed",
+      message: "ccusage exited with 2: native binary is not available",
+      warnings: [
+        "ccusage: ccusage exited with 2: native binary is not available",
+        "antigravity: could not load model prices: offline",
+      ],
+    });
+  });
+
   it("fails with the ccusage error when the command exits", async () => {
     await writeConfig(paths.configFile, { targets: [target] });
     const result = await collect({
@@ -1086,6 +1132,9 @@ describe("collect", () => {
     expect(result).toEqual({
       kind: "failed",
       message: "ccusage exited with 2: native binary is not available",
+      warnings: [
+        "ccusage: ccusage exited with 2: native binary is not available",
+      ],
     });
   });
 
