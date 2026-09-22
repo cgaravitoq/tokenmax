@@ -15,8 +15,8 @@ const machineZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const homes: string[] = [];
 
-const makeHome = async (): Promise<string> => {
-  const home = await mkdtemp(join(tmpdir(), "tokenmax-install-"));
+const makeHome = async (prefix = "tokenmax-install-"): Promise<string> => {
+  const home = await mkdtemp(join(tmpdir(), prefix));
   homes.push(home);
   return home;
 };
@@ -278,6 +278,43 @@ describe("install", () => {
     expect(await readFile(paths.timer, "utf8")).toBe(timerFor());
     expect(lines.at(-1)).toBe(
       `load: systemctl --user enable --now ${basename(paths.timer)}`,
+    );
+  });
+
+  it("escapes & and % from the home in the plist and the unit", async () => {
+    const home = await makeHome("tokenmax-esc-&-%-");
+    const nastyExecPath = "/opt/bun & %/bin/bun";
+    const nastyCliPath = `${home}/pkg & %/cli.ts`;
+    const base = {
+      env: { home },
+      execPath: nastyExecPath,
+      key: "tmx_secret_value",
+      url: "http://localhost:8797",
+    };
+
+    await install({
+      ...base,
+      cliPath: nastyCliPath,
+      platform: "darwin",
+      uid: 501,
+    });
+    const plist = await readFile(
+      join(home, "Library", "LaunchAgents", "dev.tokenmax.collector.plist"),
+      "utf8",
+    );
+    expect(plist).toContain(
+      `<string>${home.replaceAll("&", "&amp;")}/Library/Logs/tokenmax/tokenmax.log</string>`,
+    );
+    expect(plist).toContain("<string>/opt/bun &amp; %/bin/bun</string>");
+    expect(plist).not.toContain("<string>/opt/bun & %/bin/bun</string>");
+
+    await install({ ...base, cliPath: nastyCliPath, platform: "linux" });
+    const service = await readFile(
+      join(home, ".config", "systemd", "user", "tokenmax.service"),
+      "utf8",
+    );
+    expect(service).toContain(
+      `ExecStart="/opt/bun & %%/bin/bun" "${home.replaceAll("%", "%%")}/pkg & %%/cli.ts" collect`,
     );
   });
 
