@@ -204,6 +204,7 @@ describe("collect", () => {
     ).toEqual({
       days: expectedDays,
       machine: "abc-123",
+      providers: ["antigravity", "claude", "codex", "devin", "pi"],
       timezone: "Europe/Madrid",
     });
   });
@@ -685,6 +686,57 @@ describe("collect", () => {
     );
   });
 
+  it("names every provider the report covers", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-09T12:00:00.000Z"),
+          input: 10,
+          modelCode: 1318,
+          output: 10,
+        },
+      ],
+    });
+    const transcripts = devinTranscriptsDir(home);
+    await mkdir(transcripts, { recursive: true });
+    writeTranscript(join(transcripts, "abiding-hall.json"), [
+      {
+        at: new Date("2026-09-09T12:00:00.000Z"),
+        model: "claude-fable-5-1-high",
+        output: 5,
+        prompt: 7,
+      },
+    ]);
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":5}'),
+        [],
+      ),
+      identity,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toMatchObject({ kind: "reported" });
+    expect(JSON.parse(String(requests[0].init.body)).providers).toEqual([
+      "antigravity",
+      "claude",
+      "codex",
+      "devin",
+      "pi",
+    ]);
+  });
+
   it("reports around a conversation it cannot read and names it", async () => {
     await writeConfig(paths.configFile, { targets: [target] });
     const conversations = antigravityConversationsDir(home);
@@ -723,6 +775,12 @@ describe("collect", () => {
       ],
     });
     expect(JSON.parse(String(requests[0].init.body)).days).toHaveLength(4);
+    expect(JSON.parse(String(requests[0].init.body)).providers).toEqual([
+      "claude",
+      "codex",
+      "devin",
+      "pi",
+    ]);
   });
 
   it("names the target with the status and the body when the key is rejected", async () => {
@@ -1009,6 +1067,10 @@ describe("collect", () => {
         output: 5,
         provider: "devin",
       },
+    ]);
+    expect(JSON.parse(String(requests[0].init.body)).providers).toEqual([
+      "antigravity",
+      "devin",
     ]);
   });
 
