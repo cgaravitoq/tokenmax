@@ -469,6 +469,7 @@ describe("collectorPaths", () => {
     const paths = collectorPaths({
       home: "/tmp/unused",
       tokenmaxHome: "/tmp/tokenmax-p4",
+      xdgConfigHome: "/xdg/config",
     });
 
     expect(paths.configFile).toBe(
