@@ -785,6 +785,34 @@ describe("collect", () => {
     ]);
   });
 
+  it("gives up on a target that never answers", async () => {
+    await writeConfig(paths.configFile, { targets: [target] });
+
+    const result = await collect({
+      env: { home },
+      fetcher: async (_url, init) => {
+        const signal = init.signal;
+        if (signal === undefined || signal === null) {
+          throw new Error("the report fetch carries no signal");
+        }
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve());
+        });
+        signal.throwIfAborted();
+        throw new Error("the report fetch was not aborted");
+      },
+      identity,
+      requestTimeoutMs: 50,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      kind: "reported",
+      targets: [{ message: expect.stringMatching(/abort|timeout/i), url }],
+    });
+  });
+
   it("reports nothing without calling tokenmax when there is no usage", async () => {
     await writeConfig(paths.configFile, { targets: [target] });
     const result = await collect({

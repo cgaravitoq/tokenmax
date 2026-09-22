@@ -29,6 +29,7 @@ export interface CollectOptions {
   identity: MachineIdentity;
   env?: CollectorEnv;
   fetcher?: Fetcher;
+  requestTimeoutMs?: number;
   runner?: CommandRunner;
   today?: Date;
   timezone?: string;
@@ -51,6 +52,8 @@ export type CollectResult =
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+const fetchTimeoutMs = 30_000;
 
 const reportUrl = (baseUrl: string): string =>
   `${baseUrl.replace(/\/+$/, "")}/api/report`;
@@ -91,6 +94,7 @@ interface LocalWindow {
   fetcher: Fetcher;
   home: string;
   pricesFile: string;
+  requestTimeoutMs: number;
   since: string;
   timezone: string;
   today: Date;
@@ -112,6 +116,7 @@ async function report(
   fetcher: Fetcher,
   target: CollectorTarget,
   body: string,
+  requestTimeoutMs: number,
 ): Promise<TargetResult> {
   const { url } = target;
   try {
@@ -122,6 +127,7 @@ async function report(
         "Content-Type": "application/json",
       },
       method: "POST",
+      signal: AbortSignal.timeout(requestTimeoutMs),
     });
     const answer = await response.text();
     if (response.status !== 200) {
@@ -162,6 +168,7 @@ async function localDays<Step extends { at: Date }>(
       window.fetcher,
       window.pricesFile,
       window.today,
+      window.requestTimeoutMs,
     );
     return { days: source.map(steps, window.timezone, prices), warnings };
   } catch (error) {
@@ -191,6 +198,7 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
     config.config.timezone ?? options.timezone ?? runtimeTimezone();
   const runner = options.runner ?? runCommand;
   const fetcher = options.fetcher ?? fetch;
+  const requestTimeoutMs = options.requestTimeoutMs ?? fetchTimeoutMs;
   const today = options.today ?? new Date();
 
   let days: UsageDay[];
@@ -209,6 +217,7 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
     fetcher,
     home: env.home,
     pricesFile: paths.pricesFile,
+    requestTimeoutMs,
     since: windowStart(today, timezone),
     timezone,
     today,
@@ -230,7 +239,7 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
   const body = JSON.stringify(usage);
   const targets: TargetResult[] = [];
   for (const target of config.config.targets) {
-    targets.push(await report(fetcher, target, body));
+    targets.push(await report(fetcher, target, body, requestTimeoutMs));
   }
   return { kind: "reported", machine, targets, warnings };
 }

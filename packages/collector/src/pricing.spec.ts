@@ -198,6 +198,24 @@ describe("loadPrices", () => {
     ]);
   });
 
+  it("gives up on a price fetch that never answers", async () => {
+    const neverAnswers: Fetcher = async (_url, init) => {
+      const signal = init.signal;
+      if (signal === undefined || signal === null) {
+        throw new Error("the price fetch carries no signal");
+      }
+      await new Promise<void>((resolve) => {
+        signal.addEventListener("abort", () => resolve());
+      });
+      signal.throwIfAborted();
+      throw new Error("the price fetch was not aborted");
+    };
+
+    await expect(
+      loadPrices(neverAnswers, pricesFile, new Date(), 50),
+    ).rejects.toThrow(/abort|timeout/i);
+  });
+
   it("fails without a cache when the fetch fails", async () => {
     await expect(
       loadPrices(failingFetcher, pricesFile, new Date()),
