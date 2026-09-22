@@ -940,10 +940,23 @@ describe("collect", () => {
     });
   });
 
-  it("keeps every day of a 2500 row report in one request", async () => {
+  it("keeps every date of a multi-source report in one request", async () => {
     await writeConfig(paths.configFile, {
       targets: [target],
       timezone: "UTC",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-05T12:00:00.000Z"),
+          input: 10,
+          modelCode: 1318,
+          output: 10,
+        },
+      ],
     });
     const daily = {
       daily: Array.from({ length: 2500 }, (_, index) => ({
@@ -971,7 +984,7 @@ describe("collect", () => {
 
     const result = await collect({
       env: { home },
-      fetcher: async (url, init) => {
+      fetcher: pricingFetcher(async (url, init) => {
         requests.push({ init, url });
         const parsed = parseReport(String(init.body));
         if (!parsed.ok) {
@@ -982,7 +995,7 @@ describe("collect", () => {
           text: async () =>
             JSON.stringify({ accepted: parsed.report.days.length }),
         };
-      },
+      }, []),
       identity,
       runner: dailyRunner(JSON.stringify(daily), []),
       today: new Date("2026-09-10T23:30:00.000Z"),
@@ -991,17 +1004,34 @@ describe("collect", () => {
     expect(result).toEqual({
       kind: "reported",
       machine: "abc-123",
-      targets: [{ accepted: 2500, url }],
+      targets: [{ accepted: 2501, url }],
       warnings: [],
     });
     const slices = requests.map(
       (request) => JSON.parse(String(request.init.body)).days as UsageDay[],
     );
-    expect(slices.map((days) => days.length)).toEqual([900, 900, 700]);
-    const dateSlots = slices.flatMap((days) => [
-      ...new Set(days.map((day) => day.date)),
-    ]);
-    expect(new Set(dateSlots).size).toBe(dateSlots.length);
+    expect(slices.flat()).toHaveLength(2501);
+    for (const days of slices) {
+      const dates = days.map((day) => day.date);
+      expect(dates).toEqual([...dates].sort());
+    }
+    const windows = slices.map((days) => {
+      const dates = days.map((day) => day.date).sort();
+      return { end: dates[dates.length - 1], start: dates[0] };
+    });
+    const overlaps = windows.flatMap((window, index) =>
+      windows
+        .slice(index + 1)
+        .filter(
+          (other) => window.start <= other.end && other.start <= window.end,
+        )
+        .map(
+          (other) =>
+            `${window.start}..${window.end} overlaps ${other.start}..${other.end}`,
+        ),
+    );
+    expect(overlaps).toEqual([]);
+    expect(slices.map((days) => days.length)).toEqual([900, 901, 700]);
   });
 
   it("reports nothing without calling tokenmax when there is no usage", async () => {

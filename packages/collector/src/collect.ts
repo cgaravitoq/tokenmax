@@ -298,6 +298,7 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
       (day) => !covered.has(providerDay(day)),
     ),
   );
+  days.sort((a, b) => a.date.localeCompare(b.date));
   const warnings =
     ccusageFailure === null ? [] : [`ccusage: ${ccusageFailure}`];
   warnings.push(...antigravity.warnings, ...devin.warnings);
