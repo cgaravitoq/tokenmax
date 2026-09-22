@@ -6,6 +6,8 @@ import { d1BatchLimit } from "@/server/usage";
 
 type SqliteValue = null | number | bigint | string | Uint8Array<ArrayBuffer>;
 
+const trailingSql = /^(?:\s|--[^\n]*|\/\*[\s\S]*?\*\/)*$/;
+
 interface SqliteRow {
   [column: string]: unknown;
 }
@@ -53,7 +55,7 @@ class SqliteD1Statement {
   readonly statement: StatementSync;
 
   constructor(
-    private readonly owner: SqliteD1TestDatabase,
+    readonly owner: SqliteD1TestDatabase,
     sql: string,
     private readonly values: SqliteValue[] = [],
   ) {
@@ -131,7 +133,14 @@ export class SqliteD1TestDatabase {
   }
 
   private prepare(query: string): SqliteD1PreparedStatement {
-    return new SqliteD1Statement(this, query);
+    const statement = new SqliteD1Statement(this, query);
+    const trailing = query.slice(statement.statement.sourceSQL.length);
+    if (!trailingSql.test(trailing)) {
+      throw new TypeError(
+        "D1 accepts one statement at a time, and this prepared statement holds more",
+      );
+    }
+    return statement;
   }
 
   private async batch<T>(
@@ -144,7 +153,10 @@ export class SqliteD1TestDatabase {
       );
     }
     const sqliteStatements = statements.map((statement) => {
-      if (!(statement instanceof SqliteD1Statement)) {
+      if (
+        !(statement instanceof SqliteD1Statement) ||
+        statement.owner !== this
+      ) {
         throw new TypeError("Statement belongs to another database");
       }
       return statement;
