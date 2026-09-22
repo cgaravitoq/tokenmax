@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   parseReport,
   usageReport,
+  type UsageReport as WireUsageReport,
 } from "../../../apps/worker/src/server/report";
 import { antigravityConversationsDir } from "./antigravity";
 import { sinceArgument } from "./ccusage";
@@ -17,7 +18,7 @@ import { type CollectorPaths, collectorPaths } from "./paths";
 import { litellmPricesUrl } from "./pricing";
 import { writeConversation } from "./test/antigravity-fixture";
 import { writeTranscript } from "./test/devin-fixture";
-import type { UsageDay } from "./usage";
+import type { UsageDay, UsageReport } from "./usage";
 
 const identity = { hostname: "test-host", platformUuid: "abc-123" };
 const key = "tmx_secret_value";
@@ -154,6 +155,20 @@ afterEach(async () => {
 });
 
 describe("collect", () => {
+  it("declares the report the worker's parser accepts", () => {
+    const report: UsageReport = {
+      days: expectedDays,
+      machine: "abc-123",
+      providers: ["claude"],
+      timezone: "Europe/Madrid",
+    };
+    const wire: WireUsageReport = report;
+    const parsed: UsageReport = usageReport.parse(wire);
+    const back: WireUsageReport = parsed;
+
+    expect(back).toEqual(report);
+  });
+
   it("reports the mapped days to the tokenmax report endpoint", async () => {
     await writeConfig(paths.configFile, {
       targets: [{ key, url: "http://localhost:8797/" }],

@@ -3,6 +3,7 @@ import { once } from "node:events";
 import {
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rename,
@@ -12,7 +13,7 @@ import {
 import { createServer, type Server } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, expect, it } from "vitest";
 import {
@@ -163,6 +164,14 @@ it("installs and runs the packed package", async () => {
     expect(await realpath(tokenmax)).toContain(
       join("install", "global", "node_modules", "tokenmax-collector"),
     );
+
+    const sources = join(globalModules, "tokenmax-collector", "src");
+    for (const name of await readdir(sources)) {
+      const source = await readFile(join(sources, name), "utf8");
+      for (const [, specifier] of source.matchAll(/from "(\.[^"]+)"/g)) {
+        expect(normalize(join("src", specifier)).startsWith("..")).toBe(false);
+      }
+    }
 
     const dryRun = await runChild(
       tokenmax,
