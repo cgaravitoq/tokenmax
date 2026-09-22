@@ -113,7 +113,7 @@ describe("authenticateApiKey", () => {
 });
 
 describe("recordUsage", () => {
-  it("keeps the stored numbers when a report repeats lower ones", async () => {
+  it("stores a day whose value drops lower", async () => {
     const sqlite = database();
     const db = sqlite.asD1();
     const userId = seedUser(sqlite);
@@ -137,16 +137,16 @@ describe("recordUsage", () => {
     expect(storedUsage(sqlite)).toEqual([
       {
         machine_id: "mac-1",
-        input: 10,
-        output: 20,
-        cache_create: 5,
-        cache_read: 40,
-        cost_usd: 0.5,
+        input: 3,
+        output: 4,
+        cache_create: 1,
+        cache_read: 2,
+        cost_usd: 0.1,
       },
     ]);
   });
 
-  it("raises each stored number independently", async () => {
+  it("replaces every stored number from the last report", async () => {
     const sqlite = database();
     const db = sqlite.asD1();
     const userId = seedUser(sqlite);
@@ -155,18 +155,26 @@ describe("recordUsage", () => {
     await recordUsage(
       db,
       userId,
-      report("mac-1", [day({ input: 30, output: 5, cost_usd: 0.9 })]),
+      report("mac-1", [
+        day({
+          input: 7,
+          output: 5,
+          cache_create: 2,
+          cache_read: 3,
+          cost_usd: 0.2,
+        }),
+      ]),
       reportedAt,
     );
 
     expect(storedUsage(sqlite)).toEqual([
       {
         machine_id: "mac-1",
-        input: 30,
-        output: 20,
-        cache_create: 5,
-        cache_read: 40,
-        cost_usd: 0.9,
+        input: 7,
+        output: 5,
+        cache_create: 2,
+        cache_read: 3,
+        cost_usd: 0.2,
       },
     ]);
   });
@@ -319,7 +327,7 @@ describe("recordUsage", () => {
       "day",
       new Date("2026-09-10T12:00:00.000Z"),
     );
-    expect(repeated?.totals.input).toBe(60);
+    expect(repeated?.totals.input).toBe(50);
   });
 
   it("replaces from the earliest reported date and only for that machine", async () => {

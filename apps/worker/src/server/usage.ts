@@ -100,11 +100,11 @@ const upsertDaySql = `INSERT INTO usage_days (
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (user_id, machine_id, date, provider, model) DO UPDATE SET
-  input = max(input, excluded.input),
-  output = max(output, excluded.output),
-  cache_create = max(cache_create, excluded.cache_create),
-  cache_read = max(cache_read, excluded.cache_read),
-  cost_usd = max(cost_usd, excluded.cost_usd),
+  input = excluded.input,
+  output = excluded.output,
+  cache_create = excluded.cache_create,
+  cache_read = excluded.cache_read,
+  cost_usd = excluded.cost_usd,
   updated_at = CURRENT_TIMESTAMP`;
 
 export async function hashApiKey(key: string): Promise<string> {
