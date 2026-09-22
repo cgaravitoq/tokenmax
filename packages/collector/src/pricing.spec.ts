@@ -216,6 +216,20 @@ describe("loadPrices", () => {
     ).rejects.toThrow(/abort|timeout/i);
   });
 
+  it("keeps the stale cache when LiteLLM answers an empty table", async () => {
+    const now = new Date("2026-09-13T12:00:00.000Z");
+    await writeCache(sample, new Date(now.getTime() - 25 * 60 * 60 * 1000));
+
+    const table = await loadPrices(
+      fetcherReturning(200, "{}", []),
+      pricesFile,
+      now,
+    );
+
+    expect(table.size).toBe(2);
+    expect(await readFile(pricesFile, "utf8")).toBe(sample);
+  });
+
   it("fails without a cache when the fetch fails", async () => {
     await expect(
       loadPrices(failingFetcher, pricesFile, new Date()),

@@ -121,6 +121,9 @@ export async function loadPrices(
   try {
     source = await fetchPrices(fetcher, timeoutMs);
     table = parseLitellmPrices(source);
+    if (table.size === 0) {
+      throw new Error("LiteLLM returned an empty price table");
+    }
   } catch (error) {
     if (cached !== null) {
       return cached.table;
