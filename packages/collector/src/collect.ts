@@ -54,6 +54,7 @@ const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 const fetchTimeoutMs = 30_000;
+const sliceSize = 1000;
 
 const reportUrl = (baseUrl: string): string =>
   `${baseUrl.replace(/\/+$/, "")}/api/report`;
@@ -147,6 +148,31 @@ async function report(
   } catch (error) {
     return { message: messageOf(error), url };
   }
+}
+
+async function reportTarget(
+  fetcher: Fetcher,
+  target: CollectorTarget,
+  usage: UsageReport,
+  requestTimeoutMs: number,
+): Promise<TargetResult> {
+  let accepted = 0;
+  for (let start = 0; start < usage.days.length; start += sliceSize) {
+    const result = await report(
+      fetcher,
+      target,
+      JSON.stringify({
+        ...usage,
+        days: usage.days.slice(start, start + sliceSize),
+      }),
+      requestTimeoutMs,
+    );
+    if ("message" in result) {
+      return result;
+    }
+    accepted += result.accepted;
+  }
+  return { accepted, url: target.url };
 }
 
 async function localDays<Step extends { at: Date }>(
@@ -243,10 +269,9 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
   }
 
   const usage: UsageReport = { days, machine, timezone };
-  const body = JSON.stringify(usage);
   const targets: TargetResult[] = [];
   for (const target of config.config.targets) {
-    targets.push(await report(fetcher, target, body, requestTimeoutMs));
+    targets.push(await reportTarget(fetcher, target, usage, requestTimeoutMs));
   }
   return { kind: "reported", machine, targets, warnings };
 }

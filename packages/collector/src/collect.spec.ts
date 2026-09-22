@@ -813,6 +813,71 @@ describe("collect", () => {
     });
   });
 
+  it("slices a 2500 row report into requests of at most 1000 rows", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const daily = {
+      daily: Array.from({ length: 2500 }, (_, index) => ({
+        agents: [
+          {
+            agent: "claude",
+            modelBreakdowns: [
+              {
+                cacheCreationTokens: 0,
+                cacheReadTokens: 0,
+                cost: 0,
+                inputTokens: 1,
+                modelName: `model-${index}`,
+                outputTokens: 1,
+              },
+            ],
+          },
+        ],
+        period: new Date(Date.UTC(2026, 8, 1 + Math.floor(index / 200)))
+          .toISOString()
+          .slice(0, 10),
+      })),
+    };
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: async (url, init) => {
+        requests.push({ init, url });
+        const parsed = usageReport.safeParse(JSON.parse(String(init.body)));
+        if (!parsed.success) {
+          throw new Error(
+            parsed.error.issues
+              .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+              .join("; "),
+          );
+        }
+        return {
+          status: 200,
+          text: async () =>
+            JSON.stringify({ accepted: parsed.data.days.length }),
+        };
+      },
+      identity,
+      runner: dailyRunner(JSON.stringify(daily), []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "abc-123",
+      targets: [{ accepted: 2500, url }],
+      warnings: [],
+    });
+    expect(
+      requests.map(
+        (request) => JSON.parse(String(request.init.body)).days.length,
+      ),
+    ).toEqual([1000, 1000, 500]);
+  });
+
   it("reports nothing without calling tokenmax when there is no usage", async () => {
     await writeConfig(paths.configFile, { targets: [target] });
     const result = await collect({
