@@ -63,7 +63,7 @@ bun run check-types
 
 **`lint-staged`** (`.lintstagedrc.json`): lint-staged runs Biome on staged files matching `*.{js,cjs,mjs,ts,mts,jsx,tsx,astro,vue,json,jsonc}` and `bun run lint:slop` on `*.{js,cjs,mjs,ts,mts,jsx,tsx,astro,vue}`; Biome applies fixes and lint-staged re-stages them, while oxlint reports failures, so a rule hit aborts the commit until the code is fixed.
 
-**`check-types`**: runs each workspace's `check-types` script, currently `tsc --noEmit` over `packages/collector/src`, and a failure aborts the commit.
+**`check-types`**: runs each workspace's `check-types` script, which is `astro check` in `apps/worker` and `tsc --noEmit` in `packages/collector`, and a failure aborts the commit.
 
 ## Commit-msg hook
 

@@ -12,6 +12,10 @@
     "!src/**/*.spec.ts",
     "!src/test/**"
   ],
+  "os": [
+    "darwin",
+    "linux"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",

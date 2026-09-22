@@ -7,7 +7,7 @@
       "type": "local",
       "name": "tokenmax",
       "path": ".",
-      "specialNotes": "Source-of-truth tokenmax repository. Inspect AGENTS.md, packages/collector, package.json, and the future apps/worker before proposing changes."
+      "specialNotes": "Source-of-truth tokenmax repository. Inspect AGENTS.md, packages/collector, apps/worker and package.json before proposing changes."
     },
     {
       "type": "git",
@@ -22,12 +22,8 @@
       "name": "cloudflare-docs",
       "url": "https://github.com/cloudflare/cloudflare-docs",
       "branch": "main",
-      "searchPaths": [
-        "src/content/docs/workers",
-        "src/content/docs/d1",
-        "src/content/docs/r2"
-      ],
-      "specialNotes": "Use for Cloudflare Workers, Wrangler, D1 migrations and queries, and R2 bindings."
+      "searchPaths": ["src/content/docs/workers", "src/content/docs/d1"],
+      "specialNotes": "Use for Cloudflare Workers, Wrangler, and D1 migrations and queries."
     },
     {
       "type": "git",

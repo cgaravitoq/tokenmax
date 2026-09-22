@@ -11,8 +11,8 @@ This repo uses [Biome](https://biomejs.dev) 2.5 as the sole formatter and the pr
 
 ```bash
 # From the repo root - runs across all workspaces
-bun run format       # biome check .                (dry-run: reports issues, no writes)
-bun run format:fix   # biome check . --write        (auto-fix + format + organize imports)
+bun run format       # biome check . --files-ignore-unknown=true          (dry-run: reports issues, no writes)
+bun run format:fix   # biome check . --write --files-ignore-unknown=true  (auto-fix + format + organize imports)
 ```
 
 ## What Biome does in this repo
@@ -30,7 +30,6 @@ Root config applies to every workspace. Key points:
 - Line width + quote style inherited repo-wide
 - TypeScript and Astro-aware rule set
 - Biome assists enabled (auto organize imports)
-- CI-only stricter rules can be toggled via `--error-on-warnings`
 
 ## Fixing issues
 
@@ -81,7 +80,7 @@ The table lists examples of enabled rules; check `biome.json`, its preset and it
 | `lint/a11y/useButtonType` | error | Buttons need an explicit `type` |
 | `lint/a11y/noSvgWithoutTitle` | error | Inline SVG needs a `<title>` |
 
-This repository turns several recommended rules **off**, so do not reach for them: `noExplicitAny`, `useExhaustiveDependencies`, `noNonNullAssertion`, `useOptionalChain`, and the whole `a11y` recommended set beyond the three listed above.
+This repository keeps the `a11y` recommended set off beyond the three rules listed above, and turns `noTemplateCurlyInString` off for `scripts/*.test.ts`, whose fixtures assert GitHub Actions expressions inside string literals. Every other recommended rule is on, so check `biome.json` before reaching for a suppression.
 The override at `biome.json` for `**/*.astro` turns `noUnusedImports` and `noUnusedVariables` off, so frontmatter bindings used only in the template are not flagged.
 
 ## IDE integration
@@ -103,7 +102,7 @@ On commit, `lint-staged` invokes `biome check --write` against staged files only
 3. Re-stages the changes
 4. Fails the commit if anything unfixable remains
 
-`lint-staged` also runs `bun run lint:slop` (oxlint) on staged JS, TS and Astro files.
+`lint-staged` also runs `bun run lint:slop` (oxlint) on staged JS, TS, Astro and Vue files.
 An oxlint failure is not auto-fixable: fix the reported rule or turn it off in `oxlint.config.mts` with a reason comment like the existing entries.
 
 If you see the commit aborted by Biome, run `bun run format:fix` locally, review the diff, and re-commit.
@@ -115,6 +114,6 @@ The `ci` workflow runs `bun run format` and `bun run lint:slop` with their confi
 ## Gotchas
 
 - See `.lintstagedrc.json` and `biome.json` for the configured file patterns and exclusions
-- Biome does not currently parse `.mdx` - only `.ts`, `.tsx`, `.js`, `.jsx`, `.json`
+- `files.includes` covers every file except `node_modules`, `dist`, `*.css` and the generated `apps/worker/worker-configuration.d.ts`; `lint-staged` routes `.js`, `.cjs`, `.mjs`, `.ts`, `.mts`, `.jsx`, `.tsx`, `.astro`, `.vue`, `.json` and `.jsonc` through Biome
 - If Biome and TypeScript disagree on import order after a rebase, run `format:fix` first
 - Don't commit a `.prettierrc` / `.eslintrc` - this repository uses Biome and oxlint
