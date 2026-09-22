@@ -39,7 +39,7 @@ const step = z.object({
   metrics: metrics.optional(),
   model_name: z.string().optional(),
   source: z.string(),
-  step_id: z.int().optional(),
+  step_id: z.unknown().optional(),
   timestamp: z.iso.datetime({ offset: true }),
 });
 
