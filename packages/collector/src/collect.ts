@@ -202,6 +202,7 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
   const today = options.today ?? new Date();
 
   let days: UsageDay[];
+  let ccusageFailure: string | null = null;
   try {
     const daily = await readCcusageDaily(
       runner,
@@ -210,7 +211,8 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
     );
     days = mapCcusageDays(daily);
   } catch (error) {
-    return { kind: "failed", message: messageOf(error) };
+    ccusageFailure = messageOf(error);
+    days = [];
   }
 
   const window: LocalWindow = {
@@ -230,8 +232,13 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
       (day) => !covered.has(providerDay(day)),
     ),
   );
-  const warnings = [...antigravity.warnings, ...devin.warnings];
+  const warnings =
+    ccusageFailure === null ? [] : [`ccusage: ${ccusageFailure}`];
+  warnings.push(...antigravity.warnings, ...devin.warnings);
   if (days.length === 0) {
+    if (ccusageFailure !== null) {
+      return { kind: "failed", message: ccusageFailure };
+    }
     return { kind: "empty", warnings };
   }
 

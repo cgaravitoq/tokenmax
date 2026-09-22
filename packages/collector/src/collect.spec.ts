@@ -6,7 +6,7 @@ import { z } from "zod";
 import { antigravityConversationsDir } from "./antigravity";
 import { sinceArgument } from "./ccusage";
 import { type CollectResult, collect } from "./collect";
-import type { CommandRunner } from "./command";
+import { type CommandRunner, runCommand } from "./command";
 import { writeConfig } from "./config";
 import { devinTranscriptsDir } from "./devin";
 import type { Fetcher } from "./http";
@@ -824,6 +824,123 @@ describe("collect", () => {
     });
 
     expect(result).toEqual({ kind: "empty", warnings: [] });
+  });
+
+  it("still reports Antigravity and Devin rows when ccusage fails", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-09T12:00:00.000Z"),
+          input: 10,
+          modelCode: 1318,
+          output: 10,
+        },
+      ],
+    });
+    const transcripts = devinTranscriptsDir(home);
+    await mkdir(transcripts, { recursive: true });
+    writeTranscript(join(transcripts, "abiding-hall.json"), [
+      {
+        at: new Date("2026-09-09T12:00:00.000Z"),
+        model: "claude-fable-5-1-high",
+        output: 5,
+        prompt: 7,
+      },
+    ]);
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":2}'),
+        [],
+      ),
+      identity,
+      runner: async () => ({
+        exitCode: 2,
+        stderr: "native binary is not available\n",
+        stdout: "",
+      }),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "abc-123",
+      targets: [{ accepted: 2, url }],
+      warnings: [
+        "ccusage: ccusage exited with 2: native binary is not available",
+      ],
+    });
+    expect(JSON.parse(String(requests[0].init.body)).days).toEqual([
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 10 * 7.5e-7 + 10 * 3.75e-6,
+        date: "2026-09-09",
+        input: 10,
+        model: "gemini-3.8-flash",
+        output: 10,
+        provider: "antigravity",
+      },
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 7 * 1e-5 + 5 * 5e-5,
+        date: "2026-09-09",
+        input: 7,
+        model: "claude-fable-5-1",
+        output: 5,
+        provider: "devin",
+      },
+    ]);
+  });
+
+  it("reports a hung ccusage as a warning and keeps the local rows", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-09T12:00:00.000Z"),
+          input: 10,
+          modelCode: 1318,
+          output: 10,
+        },
+      ],
+    });
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":1}'),
+        [],
+      ),
+      identity,
+      runner: (_command, _args) =>
+        runCommand(process.execPath, ["-e", "setTimeout(() => {}, 8000)"], 200),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toMatchObject({
+      kind: "reported",
+      targets: [{ accepted: 1, url }],
+      warnings: ["ccusage: ccusage exited with 1: timed out after 200ms"],
+    });
+    expect(JSON.parse(String(requests[0].init.body)).days).toHaveLength(1);
   });
 
   it("fails with the ccusage error when the command exits", async () => {
