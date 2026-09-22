@@ -158,7 +158,7 @@ it("installs and runs the packed package", async () => {
     expect(packListing).toContain("src/devin.ts");
     expect(packListing).not.toContain(".spec.ts");
     expect(packListing).not.toContain("src/test/");
-    expect(packListing).toContain("Total files: 17");
+    expect(packListing).toContain("Total files: 18");
 
     await runChild("bun", ["add", "-g", tarball], temporaryDirectory, env);
     expect(await realpath(tokenmax)).toContain(

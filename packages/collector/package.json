@@ -9,8 +9,13 @@
   "files": [
     "src",
     "LICENSE",
+    "README.md",
     "!src/**/*.spec.ts",
     "!src/test/**"
+  ],
+  "os": [
+    "darwin",
+    "linux"
   ],
   "license": "MIT",
   "repository": {
