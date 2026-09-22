@@ -78,6 +78,20 @@ interface ProviderUsage extends UsageAmount {
   models: Map<string, UsageAmount>;
 }
 
+const platformUuid =
+  /[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
+const linuxMachineId = /[0-9a-f]{32}$/;
+
+/** A collector old enough to prefix the identifier with the hostname reports one
+ * machine under a new id on every network it joins, so the suffix rules. */
+export function canonicalMachineId(machine: string): string {
+  return (
+    platformUuid.exec(machine)?.[0] ??
+    linuxMachineId.exec(machine)?.[0] ??
+    machine
+  );
+}
+
 const encoder = new TextEncoder();
 
 const upsertDaySql = `INSERT INTO usage_days (
@@ -120,11 +134,12 @@ export async function recordUsage(
   now: Date,
 ): Promise<void> {
   const timezone = report.timezone ?? "UTC";
+  const machine = canonicalMachineId(report.machine);
   const stored = await db
     .prepare(
       "SELECT timezone FROM machines WHERE user_id = ? AND machine_id = ?",
     )
-    .bind(userId, report.machine)
+    .bind(userId, machine)
     .first<{ timezone: string }>();
   const earliest = report.days.reduce(
     (min, day) => (day.date < min ? day.date : min),
@@ -138,20 +153,20 @@ export async function recordUsage(
             .prepare(
               "DELETE FROM usage_days WHERE user_id = ? AND machine_id = ? AND date >= ?",
             )
-            .bind(userId, report.machine, earliest),
+            .bind(userId, machine, earliest),
         ]
       : []),
     db
       .prepare(
         "INSERT INTO machines (user_id, machine_id, last_seen, timezone) VALUES (?, ?, ?, ?) ON CONFLICT (user_id, machine_id) DO UPDATE SET last_seen = excluded.last_seen, timezone = excluded.timezone",
       )
-      .bind(userId, report.machine, now.toISOString(), timezone),
+      .bind(userId, machine, now.toISOString(), timezone),
     ...report.days.map((day) =>
       db
         .prepare(upsertDaySql)
         .bind(
           userId,
-          report.machine,
+          machine,
           day.date,
           day.provider,
           day.model,
