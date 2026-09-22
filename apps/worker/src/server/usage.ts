@@ -58,17 +58,6 @@ export interface UsageSummary {
   days: UsageDaySummary[];
 }
 
-interface UsageRow {
-  date: string;
-  provider: string;
-  model: string;
-  input: number;
-  output: number;
-  cache_create: number;
-  cache_read: number;
-  cost_usd: number;
-}
-
 interface UsageAmount {
   tokens: number;
   cost_usd: number;
@@ -251,7 +240,7 @@ export async function summarizeUsage(
       GROUP BY date, provider, model`,
     )
     .bind(user.id, from, to)
-    .all<UsageRow>();
+    .all<UsageDayReport>();
 
   const totals: UsageTotals = {
     input: 0,
