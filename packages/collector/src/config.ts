@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import fsp from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
 
@@ -52,7 +52,7 @@ export async function readConfig(
 ): Promise<ConfigReadResult> {
   let source: string;
   try {
-    source = await readFile(configFile, "utf8");
+    source = await fsp.readFile(configFile, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return { kind: "missing" };
@@ -89,7 +89,9 @@ export async function writeConfig(
   configFile: string,
   config: CollectorConfig,
 ): Promise<void> {
-  await mkdir(dirname(configFile), { recursive: true });
-  await writeFile(configFile, `${JSON.stringify(config, null, 2)}\n`);
-  await chmod(configFile, 0o600);
+  await fsp.mkdir(dirname(configFile), { recursive: true });
+  await fsp.writeFile(configFile, `${JSON.stringify(config, null, 2)}\n`, {
+    mode: 0o600,
+  });
+  await fsp.chmod(configFile, 0o600);
 }
