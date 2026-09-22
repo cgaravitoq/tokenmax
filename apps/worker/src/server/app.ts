@@ -91,7 +91,20 @@ const githubProfile = z.object({
   avatar_url: z.string(),
 });
 
+const oauthTimeout = 10_000;
+
 export const app = new Hono<{ Bindings: Cloudflare.Env }>();
+
+async function oauthFetch(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(oauthTimeout),
+    });
+  } catch {
+    return new Response(null, { status: 502 });
+  }
+}
 
 function callbackUrl(requestUrl: string): string {
   return `${new URL(requestUrl).origin}/auth/github/callback`;
@@ -212,7 +225,7 @@ app.get("/auth/github/callback", async (context) => {
     return context.json({ error: "invalid state" }, 400);
   }
 
-  const exchange = await fetch(exchangeEndpoint, {
+  const exchange = await oauthFetch(exchangeEndpoint, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -230,7 +243,7 @@ app.get("/auth/github/callback", async (context) => {
     return context.json({ error: "github exchange failed" }, 502);
   }
 
-  const profile = await fetch(profileEndpoint, {
+  const profile = await oauthFetch(profileEndpoint, {
     headers: {
       Authorization: `Bearer ${token.data.access_token}`,
       Accept: "application/vnd.github+json",

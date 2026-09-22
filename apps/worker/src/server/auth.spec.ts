@@ -46,6 +46,7 @@ interface GithubRequest {
   authorization: string | null;
   contentType: string | null;
   userAgent: string | null;
+  hasSignal: boolean;
   body: string | null;
 }
 
@@ -100,6 +101,7 @@ function stubGithub(replies: GithubReply[]): GithubRequest[] {
       authorization: request.headers.get("Authorization"),
       contentType: request.headers.get("Content-Type"),
       userAgent: request.headers.get("User-Agent"),
+      hasSignal: init?.signal !== undefined && init.signal !== null,
       body: typeof init?.body === "string" ? init.body : null,
     });
     return Promise.resolve(
@@ -120,6 +122,7 @@ function exchangeRequest(code: string): GithubRequest {
     authorization: null,
     contentType: "application/json",
     userAgent: null,
+    hasSignal: true,
     body: JSON.stringify({
       client_id: clientId,
       client_secret: clientSecret,
@@ -137,6 +140,7 @@ function profileRequest(token: string): GithubRequest {
     authorization: `Bearer ${token}`,
     contentType: null,
     userAgent: "tokenmax",
+    hasSignal: true,
     body: null,
   };
 }
@@ -366,6 +370,46 @@ describe("GET /auth/github/callback", () => {
       exchangeRequest("the-code"),
       profileRequest(githubToken),
     ]);
+  });
+
+  it("answers 502 when the exchange cannot be reached", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new Error("network down")));
+    const response = await app.request(
+      callbackUrl("state-a"),
+      callbackInit("state-a"),
+      environment(database().asD1()),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: "github exchange failed",
+    });
+    expectStateCleared(response);
+  });
+
+  it("answers 502 when the profile cannot be reached", async () => {
+    const calls: number[] = [];
+    vi.stubGlobal("fetch", () => {
+      calls.push(1);
+      return calls.length === 1
+        ? Promise.resolve(
+            new Response(JSON.stringify({ access_token: githubToken }), {
+              headers: { "Content-Type": "application/json" },
+            }),
+          )
+        : Promise.reject(new Error("network down"));
+    });
+    const response = await app.request(
+      callbackUrl("state-a"),
+      callbackInit("state-a"),
+      environment(database().asD1()),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: "github profile failed",
+    });
+    expectStateCleared(response);
   });
 
   it.each([
