@@ -75,6 +75,9 @@ async function configuredTargets(
   configFile: string,
 ): Promise<CollectorTarget[]> {
   const existing = await readConfig(configFile);
+  if (existing.kind === "invalid") {
+    throw new Error(existing.message);
+  }
   return existing.kind === "ok" ? existing.config.targets : [];
 }
 

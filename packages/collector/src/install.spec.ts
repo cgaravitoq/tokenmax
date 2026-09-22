@@ -1,6 +1,14 @@
-import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { install } from "./install";
 import { collectorPaths } from "./paths";
@@ -243,6 +251,66 @@ describe("install", () => {
     ).rejects.toThrow(/invalid timezone: Mars\/Olympus/);
 
     expect(await readdir(home)).toEqual([]);
+  });
+
+  it("refuses to install over a config it cannot parse", async () => {
+    const home = await makeHome();
+    const paths = collectorPaths({ home });
+    await mkdir(dirname(paths.configFile), { recursive: true });
+    await writeFile(paths.configFile, "{");
+
+    await expect(
+      install({
+        cliPath,
+        env: { home },
+        execPath,
+        key: "tmx_secret_value",
+        platform: "darwin",
+        uid: 501,
+        url: "https://c.example",
+      }),
+    ).rejects.toThrow(
+      `could not parse tokenmax config at ${paths.configFile}:`,
+    );
+
+    expect(await readFile(paths.configFile, "utf8")).toBe("{");
+  });
+
+  it("keeps every stored target when the config timezone is refused", async () => {
+    const home = await makeHome();
+    const paths = collectorPaths({ home });
+    await mkdir(dirname(paths.configFile), { recursive: true });
+    await writeFile(
+      paths.configFile,
+      JSON.stringify({
+        targets: [
+          { key: "tmx_a", url: "https://a.example" },
+          { key: "tmx_b", url: "https://b.example" },
+        ],
+        timezone: "Mars/Olympus",
+      }),
+    );
+    const before = await readFile(paths.configFile, "utf8");
+
+    await expect(
+      install({
+        cliPath,
+        env: { home },
+        execPath,
+        key: "tmx_c",
+        platform: "darwin",
+        uid: 501,
+        url: "https://c.example",
+      }),
+    ).rejects.toThrow(
+      `invalid tokenmax config at ${paths.configFile}: timezone: invalid timezone`,
+    );
+
+    expect(await readFile(paths.configFile, "utf8")).toBe(before);
+    expect(JSON.parse(before).targets).toEqual([
+      { key: "tmx_a", url: "https://a.example" },
+      { key: "tmx_b", url: "https://b.example" },
+    ]);
   });
 
   it("prints the systemd load command without running it", async () => {
