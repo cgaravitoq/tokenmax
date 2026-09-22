@@ -180,12 +180,12 @@ export async function recordUsage(
 async function findUserId(
   db: D1Database,
   login: string,
-): Promise<number | null> {
+): Promise<{ id: number; login: string } | null> {
   const row = await db
-    .prepare("SELECT id FROM users WHERE github_login = ?")
-    .bind(login)
-    .first<{ id: number }>();
-  return row?.id ?? null;
+    .prepare("SELECT id, github_login FROM users WHERE github_login = ?")
+    .bind(login.toLowerCase())
+    .first<{ id: number; github_login: string }>();
+  return row === null ? null : { id: row.id, login: row.github_login };
 }
 
 function rangeDays(range: UsageRange): number {
@@ -236,10 +236,10 @@ export async function summarizeUsage(
   range: UsageRange,
   now: Date,
 ): Promise<UsageSummary | null> {
-  const userId = await findUserId(db, login);
-  if (userId === null) return null;
+  const user = await findUserId(db, login);
+  if (user === null) return null;
 
-  const timezone = await machineTimezone(db, userId);
+  const timezone = await machineTimezone(db, user.id);
   const { from, to } = windowFor(range, now, timezone);
   const rows = await db
     .prepare(
@@ -250,7 +250,7 @@ export async function summarizeUsage(
       WHERE user_id = ? AND date >= ? AND date <= ?
       GROUP BY date, provider, model`,
     )
-    .bind(userId, from, to)
+    .bind(user.id, from, to)
     .all<UsageRow>();
 
   const totals: UsageTotals = {
@@ -293,7 +293,7 @@ export async function summarizeUsage(
   }
 
   return {
-    login,
+    login: user.login,
     range,
     from,
     to,

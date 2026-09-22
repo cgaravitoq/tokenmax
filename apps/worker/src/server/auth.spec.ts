@@ -437,6 +437,26 @@ describe("GET /auth/github/callback", () => {
     ).toEqual([{ key_hash: await hashApiKey(key) }]);
   });
 
+  it("stores a GitHub login in lowercase", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    stubGithub([
+      { body: JSON.stringify({ access_token: githubToken }) },
+      { body: JSON.stringify({ login: "OctoCat", avatar_url: avatarUrl }) },
+    ]);
+
+    const response = await app.request(
+      callbackUrl("state-a"),
+      callbackInit("state-a"),
+      environment(db),
+    );
+
+    expect(response.status).toBe(303);
+    expect(sqlite.query("SELECT github_login FROM users")).toEqual([
+      { github_login: "octocat" },
+    ]);
+  });
+
   it("writes the user, the revocation and the new key in one batch", async () => {
     const sqlite = database();
     const db = sqlite.asD1();

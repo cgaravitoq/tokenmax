@@ -1066,3 +1066,24 @@ describe("the canonical machine id migration", () => {
     ).toEqual([{ machine_id: uuid }, { machine_id: "windows-box" }]);
   });
 });
+
+describe("the lowercase login migration", () => {
+  it("lowercases a stored login", () => {
+    const sqlite = new SqliteD1TestDatabase();
+    databases.push(sqlite);
+    sqlite.applyMigrations([
+      "0001_create_usage.sql",
+      "0002_add_machine_timezone.sql",
+      "0003_canonical_machine_id.sql",
+    ]);
+    sqlite.exec(
+      "INSERT INTO users (github_login, avatar_url) VALUES ('OctoCat', 'https://example.com/avatar.png')",
+    );
+
+    sqlite.applyMigrations(["0004_lowercase_github_login.sql"]);
+
+    expect(sqlite.query("SELECT github_login FROM users")).toEqual([
+      { github_login: "octocat" },
+    ]);
+  });
+});
