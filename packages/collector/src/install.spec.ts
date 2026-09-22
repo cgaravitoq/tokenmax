@@ -1,6 +1,6 @@
 import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { install } from "./install";
 import { collectorPaths } from "./paths";
@@ -251,6 +251,34 @@ describe("install", () => {
       `schedule: ${paths.timer}`,
       "load: systemctl --user enable --now tokenmax.timer",
     ]);
+  });
+
+  it("writes the units under XDG_CONFIG_HOME and prints that unit name", async () => {
+    const home = await makeHome();
+    const xdgConfigHome = join(home, "xdg");
+    const lines: string[] = [];
+    const paths = collectorPaths({ home, xdgConfigHome });
+
+    const plan = await install({
+      cliPath,
+      env: { home, xdgConfigHome },
+      execPath,
+      key: "tmx_secret_value",
+      log: (line) => lines.push(line),
+      platform: "linux",
+      url: "http://localhost:8797",
+    });
+
+    expect(paths.service).toBe(`${home}/xdg/systemd/user/tokenmax.service`);
+    expect(paths.timer).toBe(`${home}/xdg/systemd/user/tokenmax.timer`);
+    expect(plan.files.map((file) => file.path)).toEqual([
+      paths.service,
+      paths.timer,
+    ]);
+    expect(await readFile(paths.timer, "utf8")).toBe(timerFor());
+    expect(lines.at(-1)).toBe(
+      `load: systemctl --user enable --now ${basename(paths.timer)}`,
+    );
   });
 
   it("prints the files without writing them on a dry run", async () => {
