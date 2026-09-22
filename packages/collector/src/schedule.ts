@@ -14,7 +14,11 @@ const escapeXml = (value: string): string =>
     .replaceAll(">", "&gt;");
 
 const escapeSystemd = (value: string): string =>
-  value.replaceAll("%", "%%").replaceAll("$", "$$").replaceAll('"', '\\"');
+  value
+    .replaceAll("\\", () => "\\\\")
+    .replaceAll("%", "%%")
+    .replaceAll("$", () => "$$")
+    .replaceAll('"', '\\"');
 
 export function launchAgentPlist(options: ScheduleOptions): string {
   return `<?xml version="1.0" encoding="UTF-8"?>

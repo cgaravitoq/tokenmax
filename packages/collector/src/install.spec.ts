@@ -367,10 +367,10 @@ describe("install", () => {
     );
   });
 
-  it("escapes & and % from the home in the plist and the unit", async () => {
-    const home = await makeHome("tokenmax-esc-&-%-");
-    const nastyExecPath = "/opt/bun & %/bin/bun";
-    const nastyCliPath = `${home}/pkg & %/cli.ts`;
+  it("escapes the metacharacters of a scheduled path in the plist and the unit", async () => {
+    const home = await makeHome("tokenmax-esc-&<>-");
+    const nastyExecPath = String.raw`/opt/bun & <> % $ " \n/bin/bun`;
+    const nastyCliPath = String.raw`/opt/pkg & <> % $ " \n/cli.ts`;
     const base = {
       env: { home },
       execPath: nastyExecPath,
@@ -389,10 +389,20 @@ describe("install", () => {
       "utf8",
     );
     expect(plist).toContain(
-      `<string>${home.replaceAll("&", "&amp;")}/Library/Logs/tokenmax/tokenmax.log</string>`,
+      String.raw`<string>/opt/bun &amp; &lt;&gt; % $ " \n/bin/bun</string>`,
     );
-    expect(plist).toContain("<string>/opt/bun &amp; %/bin/bun</string>");
-    expect(plist).not.toContain("<string>/opt/bun & %/bin/bun</string>");
+    expect(plist).not.toContain(
+      String.raw`<string>/opt/bun & <> % $ " \n/bin/bun</string>`,
+    );
+    expect(plist).toContain(
+      String.raw`<string>/opt/pkg &amp; &lt;&gt; % $ " \n/cli.ts</string>`,
+    );
+    expect(plist).toContain(
+      `<string>${home
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")}/Library/Logs/tokenmax/tokenmax.log</string>`,
+    );
 
     await install({ ...base, cliPath: nastyCliPath, platform: "linux" });
     const service = await readFile(
@@ -400,7 +410,7 @@ describe("install", () => {
       "utf8",
     );
     expect(service).toContain(
-      `ExecStart="/opt/bun & %%/bin/bun" "${home.replaceAll("%", "%%")}/pkg & %%/cli.ts" collect`,
+      String.raw`ExecStart="/opt/bun & <> %% $$ \" \\n/bin/bun" "/opt/pkg & <> %% $$ \" \\n/cli.ts" collect`,
     );
   });
 
