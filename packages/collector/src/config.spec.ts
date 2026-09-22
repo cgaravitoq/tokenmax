@@ -1,4 +1,12 @@
-import fsp, { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import fsp, {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -120,12 +128,39 @@ describe("writeConfig", () => {
 
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy.mock.calls[0]).toEqual([
-        configFile,
+        `${configFile}.tmp`,
         expect.any(String),
         { mode: 0o600 },
       ]);
     } finally {
       spy.mockRestore();
     }
+
+    expect((await stat(configFile)).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(await readFile(configFile, "utf8"))).toEqual({
+      targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
+    });
+  });
+
+  it("narrows a config file that was already wider", async () => {
+    await writeFile(configFile, "{}\n");
+    await chmod(configFile, 0o644);
+    const spy = vi.spyOn(fsp, "writeFile");
+    try {
+      await writeConfig(configFile, {
+        targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
+      });
+
+      expect(spy.mock.calls.map((call) => call[0])).toEqual([
+        `${configFile}.tmp`,
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect((await stat(configFile)).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(await readFile(configFile, "utf8"))).toEqual({
+      targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
+    });
   });
 });

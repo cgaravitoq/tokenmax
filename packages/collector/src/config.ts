@@ -93,8 +93,9 @@ export async function writeConfig(
   config: CollectorConfig,
 ): Promise<void> {
   await fsp.mkdir(dirname(configFile), { recursive: true });
-  await fsp.writeFile(configFile, `${JSON.stringify(config, null, 2)}\n`, {
+  const temporary = `${configFile}.tmp`;
+  await fsp.writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, {
     mode: 0o600,
   });
-  await fsp.chmod(configFile, 0o600);
+  await fsp.rename(temporary, configFile);
 }
