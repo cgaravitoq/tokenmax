@@ -1,23 +1,8 @@
+import type { UsageDay, UsageReport } from "@/server/report";
+
 export const usageRanges = ["day", "week", "month"] as const;
 
 export type UsageRange = (typeof usageRanges)[number];
-
-export interface UsageDayReport {
-  date: string;
-  provider: string;
-  model: string;
-  input: number;
-  output: number;
-  cache_create: number;
-  cache_read: number;
-  cost_usd: number;
-}
-
-export interface UsageReport {
-  machine: string;
-  timezone?: string;
-  days: UsageDayReport[];
-}
 
 export interface UsageTotals {
   input: number;
@@ -245,7 +230,7 @@ export async function summarizeUsage(
       GROUP BY date, provider, model`,
     )
     .bind(user.id, from, to)
-    .all<UsageDayReport>();
+    .all<UsageDay>();
 
   const totals: UsageTotals = {
     input: 0,

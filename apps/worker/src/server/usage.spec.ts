@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { UsageDayReport, UsageRange, UsageReport } from "@/server/usage";
+import type { UsageDay, UsageReport } from "@/server/report";
+import type { UsageRange } from "@/server/usage";
 import {
   authenticateApiKey,
   canonicalMachineId,
@@ -43,7 +44,7 @@ function storedUsage(sqlite: SqliteD1TestDatabase): StoredUsage[] {
   );
 }
 
-function day(overrides: Partial<UsageDayReport> = {}): UsageDayReport {
+function day(overrides: Partial<UsageDay> = {}): UsageDay {
   return {
     date: "2026-09-10",
     provider: "anthropic",
@@ -59,13 +60,13 @@ function day(overrides: Partial<UsageDayReport> = {}): UsageDayReport {
 
 function report(
   machine: string,
-  days: UsageDayReport[],
+  days: UsageDay[],
   timezone?: string,
 ): UsageReport {
   return { machine, days, timezone };
 }
 
-function tokensDay(date: string, tokens: number): UsageDayReport {
+function tokensDay(date: string, tokens: number): UsageDay {
   return {
     date,
     provider: "anthropic",
@@ -409,7 +410,7 @@ describe("recordUsage", () => {
     ]);
   });
 
-  function manyDays(count: number): UsageDayReport[] {
+  function manyDays(count: number): UsageDay[] {
     return Array.from({ length: count }, (_, index) =>
       tokensDay(
         new Date(Date.UTC(2021, 0, 1 + index)).toISOString().slice(0, 10),

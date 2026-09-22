@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "@/server/app";
-import type { UsageDayReport, UsageReport } from "@/server/usage";
+import type { UsageDay, UsageReport } from "@/server/report";
 import { hashApiKey } from "@/server/usage";
 import { createSqliteD1, type SqliteD1TestDatabase } from "@/test/sqlite-d1";
 
@@ -25,7 +25,7 @@ async function fixture(): Promise<SqliteD1TestDatabase> {
   return sqlite;
 }
 
-function day(overrides: Partial<UsageDayReport> = {}): UsageDayReport {
+function day(overrides: Partial<UsageDay> = {}): UsageDay {
   return {
     date: fixedNow.toISOString().slice(0, 10),
     provider: "anthropic",
@@ -69,7 +69,7 @@ function isRawJson(value: unknown): value is RawJsonValue {
   );
 }
 
-function distinctDays(count: number): UsageDayReport[] {
+function distinctDays(count: number): UsageDay[] {
   return Array.from({ length: count }, (_, index) =>
     day({
       date: new Date(Date.UTC(2021, 0, 1 + index)).toISOString().slice(0, 10),

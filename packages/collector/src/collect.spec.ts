@@ -2,7 +2,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { z } from "zod";
+import {
+  parseReport,
+  usageReport,
+} from "../../../apps/worker/src/server/report";
 import { antigravityConversationsDir } from "./antigravity";
 import { sinceArgument } from "./ccusage";
 import { type CollectResult, collect } from "./collect";
@@ -15,37 +18,6 @@ import { litellmPricesUrl } from "./pricing";
 import { writeConversation } from "./test/antigravity-fixture";
 import { writeTranscript } from "./test/devin-fixture";
 import type { UsageDay } from "./usage";
-
-const isCalendarDate = (value: string): boolean => {
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  return (
-    !Number.isNaN(parsed.getTime()) &&
-    parsed.toISOString().slice(0, 10) === value
-  );
-};
-
-const usageReport = z.object({
-  days: z
-    .array(
-      z.object({
-        cache_create: z.int().min(0),
-        cache_read: z.int().min(0),
-        cost_usd: z.number().min(0),
-        date: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .refine(isCalendarDate),
-        input: z.int().min(0),
-        model: z.string().min(1).max(128),
-        output: z.int().min(0),
-        provider: z.string().min(1).max(64),
-      }),
-    )
-    .min(1)
-    .max(2000),
-  machine: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/),
-  timezone: z.string().min(1),
-});
 
 const identity = { hostname: "test-host", platformUuid: "abc-123" };
 const key = "tmx_secret_value";
@@ -137,13 +109,9 @@ const reportFetcher = (
 ): Fetcher => {
   return async (url, init) => {
     requests.push({ init, url });
-    const parsed = usageReport.safeParse(JSON.parse(String(init.body)));
-    if (!parsed.success) {
-      throw new Error(
-        parsed.error.issues
-          .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-          .join("; "),
-      );
+    const parsed = parseReport(String(init.body));
+    if (!parsed.ok) {
+      throw new Error(parsed.error);
     }
     return { status, text: async () => body };
   };
@@ -778,6 +746,21 @@ describe("collect", () => {
     });
   });
 
+  it("rejects a report body the worker's parser rejects", async () => {
+    const fetcher = reportFetcher([], 200, '{"accepted":1}');
+
+    await expect(
+      fetcher(`${url}/api/report`, {
+        body: JSON.stringify({
+          days: expectedDays,
+          machine: "abc-123",
+          timezone: "Mars/Olympus",
+        }),
+        method: "POST",
+      }),
+    ).rejects.toThrow("invalid timezone");
+  });
+
   it("reports the same days to every target with its own key", async () => {
     const other = { key: "otv_other_key", url: "https://tv.example" };
     await writeConfig(paths.configFile, {
@@ -908,18 +891,14 @@ describe("collect", () => {
       env: { home },
       fetcher: async (url, init) => {
         requests.push({ init, url });
-        const parsed = usageReport.safeParse(JSON.parse(String(init.body)));
-        if (!parsed.success) {
-          throw new Error(
-            parsed.error.issues
-              .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-              .join("; "),
-          );
+        const parsed = parseReport(String(init.body));
+        if (!parsed.ok) {
+          throw new Error(parsed.error);
         }
         return {
           status: 200,
           text: async () =>
-            JSON.stringify({ accepted: parsed.data.days.length }),
+            JSON.stringify({ accepted: parsed.report.days.length }),
         };
       },
       identity,
