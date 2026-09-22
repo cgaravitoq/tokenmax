@@ -71,6 +71,7 @@ By default it reads `~/.config/tokenmax/config.json`, with `TOKENMAX_HOME` and `
 The config is `{ targets: [{ url, key }], timezone? }`; the single-target `{ url, key, timezone? }` shape written before targets existed still reads.
 `install` adds the target for a new url, replaces the key of a url already configured and keeps the rest, then writes that config plus a launchd agent on macOS or a systemd user timer on Linux, and Windows is unsupported.
 `collect` prints one `accepted <n> days for <machine> at <url>` line per target and exits 1 when any target rejects the report.
+The machine is identified by its platform uuid on macOS or its `/etc/machine-id` on Linux, never by the hostname, which changes with the network; the worker also reads that identifier out of the reports an older collector sends with the hostname in front of it.
 Upgrade with `bun add -g tokenmax-collector@latest`, then run `tokenmax install --url <url> --key <existing-key>` again.
 On macOS, run `launchctl bootout gui/<uid>/dev.tokenmax.collector`, then run the printed `launchctl bootstrap` command.
 On Linux, run `systemctl --user daemon-reload`, then run the printed `systemctl --user enable --now tokenmax.timer` command.
