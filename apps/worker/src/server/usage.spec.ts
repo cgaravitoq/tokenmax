@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { UsageDayReport, UsageRange, UsageReport } from "@/server/usage";
 import {
   authenticateApiKey,
+  canonicalMachineId,
   hashApiKey,
   recordUsage,
   summarizeUsage,
@@ -198,6 +199,41 @@ describe("recordUsage", () => {
     ]);
   });
 
+  it("keeps one machine reported under several hostnames as one row", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const userId = seedUser(sqlite);
+    const uuid = "9DC3A7C8-9E34-5FAA-AA82-0661AD72B5FE";
+
+    await recordUsage(
+      db,
+      userId,
+      report(`MacBook-Air-de-Carlos.local-${uuid}`, [day()]),
+      reportedAt,
+    );
+    await recordUsage(
+      db,
+      userId,
+      report(`mac.home-${uuid}`, [day()]),
+      reportedAt,
+    );
+    await recordUsage(db, userId, report(uuid, [day()]), reportedAt);
+
+    expect(storedUsage(sqlite)).toEqual([
+      {
+        machine_id: uuid,
+        input: 10,
+        output: 20,
+        cache_create: 5,
+        cache_read: 40,
+        cost_usd: 0.5,
+      },
+    ]);
+    expect(sqlite.query("SELECT machine_id FROM machines")).toEqual([
+      { machine_id: uuid },
+    ]);
+  });
+
   it("writes nothing when one day of the report fails", async () => {
     const sqlite = database();
     const db = sqlite.asD1();
@@ -328,6 +364,24 @@ describe("recordUsage", () => {
       { machine_id: "mac-1", date: "2026-09-11", input: 70 },
       { machine_id: "mac-2", date: "2026-09-10", input: 7 },
     ]);
+  });
+});
+
+describe("canonicalMachineId", () => {
+  it("drops the hostname in front of a macOS platform uuid", () => {
+    expect(
+      canonicalMachineId("pc-1333.home-9DC3A7C8-9E34-5FAA-AA82-0661AD72B5FE"),
+    ).toBe("9DC3A7C8-9E34-5FAA-AA82-0661AD72B5FE");
+  });
+
+  it("drops the hostname in front of a Linux machine id", () => {
+    expect(canonicalMachineId("box-0123456789abcdef0123456789abcdef")).toBe(
+      "0123456789abcdef0123456789abcdef",
+    );
+  });
+
+  it("keeps an identifier that carries no platform identifier", () => {
+    expect(canonicalMachineId("mac-1")).toBe("mac-1");
   });
 });
 
@@ -862,5 +916,79 @@ describe("summarizeUsage", () => {
       to: "2026-09-10",
       totals: { input: 5 },
     });
+  });
+});
+
+describe("the canonical machine id migration", () => {
+  const uuid = "9DC3A7C8-9E34-5FAA-AA82-0661AD72B5FE";
+
+  function seedAliases(): SqliteD1TestDatabase {
+    const sqlite = new SqliteD1TestDatabase();
+    databases.push(sqlite);
+    sqlite.applyMigrations([
+      "0001_create_usage.sql",
+      "0002_add_machine_timezone.sql",
+    ]);
+    const userId = seedUser(sqlite);
+    for (const [hostname, lastSeen] of [
+      [`MacBook-Air-de-Carlos.local-${uuid}`, "2026-09-10T08:00:00.000Z"],
+      [`mac.home-${uuid}`, "2026-09-09T08:00:00.000Z"],
+      [`pc-1333.home-${uuid}`, "2026-09-08T08:00:00.000Z"],
+    ]) {
+      sqlite.exec(
+        `INSERT INTO machines (user_id, machine_id, last_seen, timezone) VALUES (${userId}, '${hostname}', '${lastSeen}', 'Europe/Madrid')`,
+      );
+      sqlite.exec(
+        `INSERT INTO usage_days (user_id, machine_id, date, provider, model, input, output, cache_create, cache_read, cost_usd)
+         VALUES (${userId}, '${hostname}', '2026-09-11', 'antigravity', 'gemini-3.8-flash', 47511543, 0, 0, 0, 9)`,
+      );
+    }
+    return sqlite;
+  }
+
+  it("collapses the aliases of one machine into a single row", () => {
+    const sqlite = seedAliases();
+
+    sqlite.applyMigrations(["0003_canonical_machine_id.sql"]);
+
+    expect(
+      sqlite.query("SELECT machine_id, input, cost_usd FROM usage_days"),
+    ).toEqual([{ machine_id: uuid, input: 47_511_543, cost_usd: 9 }]);
+    expect(
+      sqlite.query("SELECT machine_id, last_seen, timezone FROM machines"),
+    ).toEqual([
+      {
+        machine_id: uuid,
+        last_seen: "2026-09-10T08:00:00.000Z",
+        timezone: "Europe/Madrid",
+      },
+    ]);
+  });
+
+  it("stops the summary from counting that machine several times", async () => {
+    const sqlite = seedAliases();
+
+    await expect(
+      summarizeUsage(sqlite.asD1(), "octocat", "day", now),
+    ).resolves.toMatchObject({ totals: { tokens: 142_534_629 } });
+
+    sqlite.applyMigrations(["0003_canonical_machine_id.sql"]);
+
+    await expect(
+      summarizeUsage(sqlite.asD1(), "octocat", "day", now),
+    ).resolves.toMatchObject({ totals: { tokens: 47_511_543 } });
+  });
+
+  it("keeps a machine that reports no platform identifier", () => {
+    const sqlite = seedAliases();
+    sqlite.exec(
+      "INSERT INTO machines (user_id, machine_id, last_seen, timezone) VALUES (1, 'windows-box', '2026-09-10T08:00:00.000Z', 'UTC')",
+    );
+
+    sqlite.applyMigrations(["0003_canonical_machine_id.sql"]);
+
+    expect(
+      sqlite.query("SELECT machine_id FROM machines ORDER BY machine_id"),
+    ).toEqual([{ machine_id: uuid }, { machine_id: "windows-box" }]);
   });
 });

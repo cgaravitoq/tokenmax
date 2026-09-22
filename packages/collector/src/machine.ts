@@ -11,12 +11,13 @@ const disallowed = /[^A-Za-z0-9._-]/g;
 
 const platformUuidPattern = /"IOPlatformUUID"\s*=\s*"([^"]+)"/;
 
+/** The hostname changes with the network, and every spelling of it used to open
+ * a new machine on the server, so the platform identifier travels alone. */
 export function machineId(
   hostnameValue: string,
   platformUuid: string | null,
 ): string {
-  const raw =
-    platformUuid === null ? hostnameValue : `${hostnameValue}-${platformUuid}`;
+  const raw = platformUuid ?? hostnameValue;
   return raw.replace(disallowed, "-").slice(0, 64);
 }
 

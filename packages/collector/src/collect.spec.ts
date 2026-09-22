@@ -181,7 +181,7 @@ describe("collect", () => {
 
     expect(result).toEqual({
       kind: "reported",
-      machine: "test-host-abc-123",
+      machine: "abc-123",
       targets: [{ accepted: 3, url: "http://localhost:8797/" }],
       warnings: [],
     });
@@ -212,7 +212,7 @@ describe("collect", () => {
       usageReport.parse(JSON.parse(String(requests[0].init.body))),
     ).toEqual({
       days: expectedDays,
-      machine: "test-host-abc-123",
+      machine: "abc-123",
       timezone: "Europe/Madrid",
     });
   });
@@ -314,7 +314,7 @@ describe("collect", () => {
 
     expect(result).toEqual({
       kind: "reported",
-      machine: "test-host-abc-123",
+      machine: "abc-123",
       targets: [{ accepted: 4, url }],
       warnings: [],
     });
@@ -374,7 +374,7 @@ describe("collect", () => {
 
     expect(result).toEqual({
       kind: "reported",
-      machine: "test-host-abc-123",
+      machine: "abc-123",
       targets: [{ accepted: 4, url }],
       warnings: [],
     });
@@ -422,7 +422,7 @@ describe("collect", () => {
 
     expect(result).toEqual({
       kind: "reported",
-      machine: "test-host-abc-123",
+      machine: "abc-123",
       targets: [{ accepted: 4, url }],
       warnings: [
         expect.stringMatching(
@@ -504,7 +504,7 @@ describe("collect", () => {
 
     expect(result).toEqual({
       kind: "reported",
-      machine: "test-host-abc-123",
+      machine: "abc-123",
       targets: [{ accepted: 3, url }],
       warnings: ["antigravity: could not load model prices: offline"],
     });
@@ -544,7 +544,7 @@ describe("collect", () => {
 
     expect(result).toEqual({
       kind: "reported",
-      machine: "test-host-abc-123",
+      machine: "abc-123",
       targets: [{ accepted: 4, url }],
       warnings: [
         `antigravity: skipped ${join(conversations, "broken.db")}: file is not a database`,
@@ -566,7 +566,7 @@ describe("collect", () => {
 
     expect(result).toEqual({
       kind: "reported",
-      machine: "test-host-abc-123",
+      machine: "abc-123",
       targets: [
         { message: 'tokenmax responded 401: {"error":"unauthorized"}', url },
       ],
@@ -592,7 +592,7 @@ describe("collect", () => {
 
     expect(result).toEqual({
       kind: "reported",
-      machine: "test-host-abc-123",
+      machine: "abc-123",
       targets: [
         { accepted: 3, url },
         { accepted: 3, url: other.url },
@@ -631,7 +631,7 @@ describe("collect", () => {
 
     expect(result).toEqual({
       kind: "reported",
-      machine: "test-host-abc-123",
+      machine: "abc-123",
       targets: [
         { message: "fetch failed: ECONNREFUSED 127.0.0.1:8797", url },
         { accepted: 3, url: other.url },
