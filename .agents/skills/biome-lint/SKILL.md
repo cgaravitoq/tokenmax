@@ -114,6 +114,6 @@ The `ci` workflow runs `bun run format` and `bun run lint:slop` with their confi
 ## Gotchas
 
 - See `.lintstagedrc.json` and `biome.json` for the configured file patterns and exclusions
-- `files.includes` covers every file except `node_modules`, `dist`, `*.css` and the generated `apps/worker/worker-configuration.d.ts`; `lint-staged` routes `.js`, `.cjs`, `.mjs`, `.ts`, `.mts`, `.jsx`, `.tsx`, `.astro`, `.vue`, `.json` and `.jsonc` through Biome, and Biome parses no other extension
+- `files.includes` covers every file except `node_modules`, `dist`, `*.css` and the generated `apps/worker/worker-configuration.d.ts`; `lint-staged` routes `.js`, `.cjs`, `.mjs`, `.ts`, `.mts`, `.jsx`, `.tsx`, `.astro`, `.vue`, `.json` and `.jsonc` through Biome
 - If Biome and TypeScript disagree on import order after a rebase, run `format:fix` first
 - Don't commit a `.prettierrc` / `.eslintrc` - this repository uses Biome and oxlint
