@@ -819,6 +819,30 @@ describe("collect", () => {
     ).rejects.toThrow("invalid timezone");
   });
 
+  it("names a 200 whose body is not the response the worker sends", async () => {
+    await writeConfig(paths.configFile, { targets: [target] });
+
+    for (const body of ['{"accepted":1.5}', "<html>maintenance</html>"]) {
+      const requests: Request[] = [];
+      const result = await collect({
+        env: { home },
+        fetcher: reportFetcher(requests, 200, body),
+        identity,
+        runner: dailyRunner(sample, []),
+        today: new Date("2026-09-10T12:00:00.000Z"),
+      });
+
+      expect(result).toEqual({
+        kind: "reported",
+        machine: "abc-123",
+        targets: [
+          { message: `tokenmax responded an unexpected body: ${body}`, url },
+        ],
+        warnings: [],
+      });
+    }
+  });
+
   it("reports the same days to every target with its own key", async () => {
     const other = { key: "otv_other_key", url: "https://tv.example" };
     await writeConfig(paths.configFile, {

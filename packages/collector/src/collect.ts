@@ -79,7 +79,14 @@ function acceptedCount(body: string): number | null {
     return null;
   }
   const accepted = payload.accepted;
-  return typeof accepted === "number" ? accepted : null;
+  if (
+    typeof accepted !== "number" ||
+    !Number.isInteger(accepted) ||
+    accepted < 0
+  ) {
+    return null;
+  }
+  return accepted;
 }
 
 interface LocalSource<Step extends { at: Date }> {
