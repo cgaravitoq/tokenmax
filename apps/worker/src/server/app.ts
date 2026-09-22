@@ -18,8 +18,6 @@ import {
 
 const maxReportBytes = 1024 * 1024;
 
-const encoder = new TextEncoder();
-
 const calendarDate = z
   .string("invalid date")
   .regex(/^\d{4}-\d{2}-\d{2}$/, "invalid date")
@@ -150,12 +148,12 @@ app.post("/api/report", async (context) => {
   if (declaredLength > maxReportBytes) {
     return context.json({ error: "payload too large" }, 413);
   }
-  const body = await context.req.text();
-  if (encoder.encode(body).byteLength > maxReportBytes) {
+  const body = await context.req.arrayBuffer();
+  if (body.byteLength > maxReportBytes) {
     return context.json({ error: "payload too large" }, 413);
   }
 
-  const parsed = parseReport(body);
+  const parsed = parseReport(new TextDecoder().decode(body));
   if (!parsed.ok) {
     return context.json({ error: parsed.error }, 400);
   }
