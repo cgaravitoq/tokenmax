@@ -1,23 +1,8 @@
+import type { UsageDay, UsageReport } from "@/server/report";
+
 export const usageRanges = ["day", "week", "month"] as const;
 
 export type UsageRange = (typeof usageRanges)[number];
-
-export interface UsageDayReport {
-  date: string;
-  provider: string;
-  model: string;
-  input: number;
-  output: number;
-  cache_create: number;
-  cache_read: number;
-  cost_usd: number;
-}
-
-export interface UsageReport {
-  machine: string;
-  timezone?: string;
-  days: UsageDayReport[];
-}
 
 export interface UsageTotals {
   input: number;
@@ -90,14 +75,40 @@ const encoder = new TextEncoder();
 
 export const d1BatchLimit = 1000;
 
-async function runBatches(
-  db: D1Database,
-  statements: D1PreparedStatement[],
-): Promise<void> {
-  for (let start = 0; start < statements.length; start += d1BatchLimit) {
-    await db.batch(statements.slice(start, start + d1BatchLimit));
+function batchesOf(
+  head: D1PreparedStatement[],
+  groups: D1PreparedStatement[][],
+): D1PreparedStatement[][] {
+  const batches: D1PreparedStatement[][] = [];
+  let batch = [...head];
+  for (const group of groups) {
+    if (group.length > d1BatchLimit) {
+      if (batch.length > 0) {
+        batches.push(batch);
+        batch = [];
+      }
+      for (let start = 0; start < group.length; start += d1BatchLimit) {
+        batches.push(group.slice(start, start + d1BatchLimit));
+      }
+      continue;
+    }
+    if (batch.length + group.length > d1BatchLimit) {
+      batches.push(batch);
+      batch = [];
+    }
+    batch.push(...group);
   }
+  if (batch.length > 0) {
+    batches.push(batch);
+  }
+  return batches;
 }
+
+const pruneDateSql = `DELETE FROM usage_days
+WHERE user_id = ? AND machine_id = ? AND provider = ? AND date = ?`;
+
+const pruneWindowSql = `DELETE FROM usage_days
+WHERE user_id = ? AND machine_id = ? AND provider = ? AND date > ? AND date <= ?`;
 
 const upsertDaySql = `INSERT INTO usage_days (
   user_id, machine_id, date, provider, model, input, output, cache_create,
@@ -132,6 +143,24 @@ export async function authenticateApiKey(
   return row?.user_id ?? null;
 }
 
+interface ReportDate {
+  date: string;
+  rows: UsageDay[];
+}
+
+function reportDates(days: UsageDay[]): ReportDate[] {
+  const dates: ReportDate[] = [];
+  for (const day of [...days].sort((a, b) => a.date.localeCompare(b.date))) {
+    const last = dates.at(-1);
+    if (last !== undefined && last.date === day.date) {
+      last.rows.push(day);
+    } else {
+      dates.push({ date: day.date, rows: [day] });
+    }
+  }
+  return dates;
+}
+
 export async function recordUsage(
   db: D1Database,
   userId: number,
@@ -140,8 +169,10 @@ export async function recordUsage(
 ): Promise<void> {
   const timezone = report.timezone ?? "UTC";
   const machine = canonicalMachineId(report.machine);
+  const providers = report.providers ?? [];
+  const dates = reportDates(report.days);
 
-  await runBatches(db, [
+  const head = [
     db
       .prepare(
         "DELETE FROM usage_days WHERE user_id = ? AND machine_id = ? AND (SELECT timezone FROM machines WHERE user_id = ? AND machine_id = ?) <> ?",
@@ -152,23 +183,42 @@ export async function recordUsage(
         "INSERT INTO machines (user_id, machine_id, last_seen, timezone) VALUES (?, ?, ?, ?) ON CONFLICT (user_id, machine_id) DO UPDATE SET last_seen = excluded.last_seen, timezone = excluded.timezone",
       )
       .bind(userId, machine, now.toISOString(), timezone),
-    ...report.days.map((day) =>
-      db
-        .prepare(upsertDaySql)
-        .bind(
-          userId,
-          machine,
-          day.date,
-          day.provider,
-          day.model,
-          day.input,
-          day.output,
-          day.cache_create,
-          day.cache_read,
-          day.cost_usd,
-        ),
-    ),
-  ]);
+  ];
+
+  const groups: D1PreparedStatement[][] = [];
+  let previous: string | undefined;
+  for (const entry of dates) {
+    groups.push([
+      ...providers.map((provider) =>
+        previous === undefined
+          ? db.prepare(pruneDateSql).bind(userId, machine, provider, entry.date)
+          : db
+              .prepare(pruneWindowSql)
+              .bind(userId, machine, provider, previous, entry.date),
+      ),
+      ...entry.rows.map((day) =>
+        db
+          .prepare(upsertDaySql)
+          .bind(
+            userId,
+            machine,
+            day.date,
+            day.provider,
+            day.model,
+            day.input,
+            day.output,
+            day.cache_create,
+            day.cache_read,
+            day.cost_usd,
+          ),
+      ),
+    ]);
+    previous = entry.date;
+  }
+
+  for (const batch of batchesOf(head, groups)) {
+    await db.batch(batch);
+  }
 }
 
 async function findUserId(
@@ -245,7 +295,7 @@ export async function summarizeUsage(
       GROUP BY date, provider, model`,
     )
     .bind(user.id, from, to)
-    .all<UsageDayReport>();
+    .all<UsageDay>();
 
   const totals: UsageTotals = {
     input: 0,

@@ -16,6 +16,7 @@ import type { Fetcher } from "./http";
 import { type MachineIdentity, machineId } from "./machine";
 import {
   antigravityProvider,
+  ccusageProviders,
   devinProvider,
   type MappedDays,
   mapAntigravitySteps,
@@ -78,7 +79,14 @@ function acceptedCount(body: string): number | null {
     return null;
   }
   const accepted = payload.accepted;
-  return typeof accepted === "number" ? accepted : null;
+  if (
+    typeof accepted !== "number" ||
+    !Number.isInteger(accepted) ||
+    accepted < 0
+  ) {
+    return null;
+  }
+  return accepted;
 }
 
 interface LocalSource<Step extends { at: Date }> {
@@ -146,6 +154,32 @@ async function report(
   }
 }
 
+function daySlices(days: UsageDay[], size: number): UsageDay[][] {
+  const groups: UsageDay[][] = [];
+  for (const day of days) {
+    const group = groups.at(-1);
+    if (group !== undefined && group[0].date === day.date) {
+      group.push(day);
+    } else {
+      groups.push([day]);
+    }
+  }
+
+  const slices: UsageDay[][] = [];
+  let current: UsageDay[] = [];
+  for (const group of groups) {
+    if (current.length > 0 && current.length + group.length > size) {
+      slices.push(current);
+      current = [];
+    }
+    current.push(...group);
+  }
+  if (current.length > 0) {
+    slices.push(current);
+  }
+  return slices;
+}
+
 async function reportTarget(
   fetcher: Fetcher,
   target: CollectorTarget,
@@ -153,14 +187,11 @@ async function reportTarget(
   requestTimeoutMs: number,
 ): Promise<TargetResult> {
   let accepted = 0;
-  for (let start = 0; start < usage.days.length; start += sliceSize) {
+  for (const slice of daySlices(usage.days, sliceSize)) {
     const result = await report(
       fetcher,
       target,
-      JSON.stringify({
-        ...usage,
-        days: usage.days.slice(start, start + sliceSize),
-      }),
+      JSON.stringify({ ...usage, days: slice }),
       requestTimeoutMs,
     );
     if ("message" in result) {
@@ -171,20 +202,25 @@ async function reportTarget(
   return { accepted, url: target.url };
 }
 
+interface LocalDays extends MappedDays {
+  providers: string[];
+}
+
 async function localDays<Step extends { at: Date }>(
   source: LocalSource<Step>,
   window: LocalWindow,
-): Promise<MappedDays> {
+): Promise<LocalDays> {
   try {
     const usage = await source.read(window.home);
     const warnings = usage.failures.map(
       (failure) => `${source.provider}: skipped ${failure}`,
     );
+    const providers = usage.failures.length === 0 ? [source.provider] : [];
     const steps = usage.steps.filter(
       (step) => calendarDate(step.at, window.timezone) >= window.since,
     );
     if (steps.length === 0) {
-      return { days: [], warnings };
+      return { days: [], providers, warnings };
     }
     const prices = await loadPrices(
       window.fetcher,
@@ -195,11 +231,13 @@ async function localDays<Step extends { at: Date }>(
     const mapped = source.map(steps, window.timezone, prices);
     return {
       days: mapped.days,
+      providers,
       warnings: [...warnings, ...mapped.warnings],
     };
   } catch (error) {
     return {
       days: [],
+      providers: [],
       warnings: [`${source.provider}: ${messageOf(error)}`],
     };
   }
@@ -229,6 +267,7 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
 
   let days: UsageDay[];
   let ccusageFailure: string | null = null;
+  let ccusageCovered: string[] = [];
   try {
     const daily = await readCcusageDaily(
       runner,
@@ -236,6 +275,7 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
       timezone,
     );
     days = mapCcusageDays(daily);
+    ccusageCovered = ccusageProviders(daily);
   } catch (error) {
     ccusageFailure = messageOf(error);
     days = [];
@@ -258,6 +298,7 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
       (day) => !covered.has(providerDay(day)),
     ),
   );
+  days.sort((a, b) => a.date.localeCompare(b.date));
   const warnings =
     ccusageFailure === null ? [] : [`ccusage: ${ccusageFailure}`];
   warnings.push(...antigravity.warnings, ...devin.warnings);
@@ -268,7 +309,18 @@ export async function collect(options: CollectOptions): Promise<CollectResult> {
     return { kind: "empty", warnings };
   }
 
-  const usage: UsageReport = { days, machine, timezone };
+  const usage: UsageReport = {
+    days,
+    machine,
+    providers: [
+      ...new Set([
+        ...ccusageCovered,
+        ...antigravity.providers,
+        ...devin.providers,
+      ]),
+    ].sort(),
+    timezone,
+  };
   const targets: TargetResult[] = [];
   for (const target of config.config.targets) {
     targets.push(await reportTarget(fetcher, target, usage, requestTimeoutMs));

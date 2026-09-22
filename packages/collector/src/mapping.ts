@@ -37,6 +37,16 @@ function addRow(rows: Map<string, UsageDay>, row: UsageDay): void {
   existing.output += row.output;
 }
 
+export function ccusageProviders(output: CcusageDaily): string[] {
+  const providers = new Set<string>();
+  for (const day of output.daily) {
+    for (const agent of day.agents) {
+      providers.add(agent.agent);
+    }
+  }
+  return [...providers].sort();
+}
+
 export function mapCcusageDays(output: CcusageDaily): UsageDay[] {
   const rows = new Map<string, UsageDay>();
 

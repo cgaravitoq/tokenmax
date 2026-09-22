@@ -3,6 +3,7 @@ import { once } from "node:events";
 import {
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rename,
@@ -12,11 +13,13 @@ import {
 import { createServer, type Server } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, expect, it } from "vitest";
-import { z } from "zod";
-import { canonicalTimezone } from "./config";
+import {
+  parseReport,
+  type UsageReport,
+} from "../../../apps/worker/src/server/report";
 
 const execFileAsync = promisify(execFile);
 const packageDirectory = new URL("..", import.meta.url).pathname;
@@ -25,45 +28,6 @@ const { version } = JSON.parse(
 ) as { version: string };
 const runningChildren = new Set<ChildProcess>();
 const temporaryDirectories: string[] = [];
-
-const isCalendarDate = (value: string): boolean => {
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  return (
-    !Number.isNaN(parsed.getTime()) &&
-    parsed.toISOString().slice(0, 10) === value
-  );
-};
-
-const usageDay = z
-  .object({
-    cache_create: z.int().min(0),
-    cache_read: z.int().min(0),
-    cost_usd: z.number().min(0),
-    date: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .refine(isCalendarDate),
-    input: z.int().min(0),
-    model: z.string().min(1).max(128),
-    output: z.int().min(0),
-    provider: z.string().min(1).max(64),
-  })
-  .strict();
-
-const usageReport = z
-  .object({
-    days: z.array(usageDay).min(1).max(2000),
-    machine: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/),
-    timezone: z.string().transform((value, context) => {
-      const zone = canonicalTimezone(value);
-      if (zone === null) {
-        context.addIssue({ code: "custom", message: "invalid timezone" });
-        return z.NEVER;
-      }
-      return zone;
-    }),
-  })
-  .strict();
 
 interface ChildResult {
   stderr: string;
@@ -201,6 +165,14 @@ it("installs and runs the packed package", async () => {
       join("install", "global", "node_modules", "tokenmax-collector"),
     );
 
+    const sources = join(globalModules, "tokenmax-collector", "src");
+    for (const name of await readdir(sources)) {
+      const source = await readFile(join(sources, name), "utf8");
+      for (const [, specifier] of source.matchAll(/from "(\.[^"]+)"/g)) {
+        expect(normalize(join("src", specifier)).startsWith("..")).toBe(false);
+      }
+    }
+
     const dryRun = await runChild(
       tokenmax,
       [
@@ -250,7 +222,7 @@ it("installs and runs the packed package", async () => {
       })}\n`,
     );
 
-    const reports: z.infer<typeof usageReport>[] = [];
+    const reports: UsageReport[] = [];
     let requests = 0;
     server = createServer(async (request, response) => {
       requests += 1;
@@ -264,27 +236,20 @@ it("installs and runs the packed package", async () => {
       for await (const chunk of request) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
-      let payload: unknown;
-      try {
-        payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      } catch {
-        response.writeHead(400).end('{"error":"invalid json"}');
-        return;
-      }
-      const parsed = usageReport.safeParse(payload);
+      const parsed = parseReport(Buffer.concat(chunks).toString("utf8"));
       if (
         request.method !== "POST" ||
         request.url !== "/api/report" ||
         request.headers["content-type"] !== "application/json" ||
-        !parsed.success
+        !parsed.ok
       ) {
         response.writeHead(400).end('{"error":"invalid report"}');
         return;
       }
-      reports.push(parsed.data);
+      reports.push(parsed.report);
       response
         .writeHead(200, { "Content-Type": "application/json" })
-        .end(JSON.stringify({ accepted: parsed.data.days.length }));
+        .end(JSON.stringify({ accepted: parsed.report.days.length }));
     });
     await listen(server);
     const address = server.address();

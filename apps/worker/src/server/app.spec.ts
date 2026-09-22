@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "@/server/app";
-import type { UsageDayReport, UsageReport } from "@/server/usage";
+import type { UsageDay, UsageReport } from "@/server/report";
 import { hashApiKey } from "@/server/usage";
 import { createSqliteD1, type SqliteD1TestDatabase } from "@/test/sqlite-d1";
 
@@ -25,7 +25,7 @@ async function fixture(): Promise<SqliteD1TestDatabase> {
   return sqlite;
 }
 
-function day(overrides: Partial<UsageDayReport> = {}): UsageDayReport {
+function day(overrides: Partial<UsageDay> = {}): UsageDay {
   return {
     date: fixedNow.toISOString().slice(0, 10),
     provider: "anthropic",
@@ -69,7 +69,7 @@ function isRawJson(value: unknown): value is RawJsonValue {
   );
 }
 
-function distinctDays(count: number): UsageDayReport[] {
+function distinctDays(count: number): UsageDay[] {
   return Array.from({ length: count }, (_, index) =>
     day({
       date: new Date(Date.UTC(2021, 0, 1 + index)).toISOString().slice(0, 10),
@@ -91,10 +91,10 @@ const constraints: ConstraintCase[] = [
   {
     field: "days",
     scope: "report",
-    accept: [distinctDays(2000)],
+    accept: [distinctDays(5000)],
     reject: [
       [[], "invalid days"],
-      [distinctDays(2001), "invalid days"],
+      [distinctDays(5001), "invalid days"],
     ],
   },
   {
@@ -105,6 +105,17 @@ const constraints: ConstraintCase[] = [
       ["Mars/Olympus", "invalid timezone"],
       ["", "invalid timezone"],
       [42, "invalid timezone"],
+    ],
+  },
+  {
+    field: "providers",
+    scope: "report",
+    accept: [["anthropic", "antigravity"], []],
+    reject: [
+      [["p".repeat(65)], "invalid provider"],
+      [["", "anthropic"], "invalid provider"],
+      ["anthropic", "invalid providers"],
+      [Array.from({ length: 65 }, () => "anthropic"), "invalid providers"],
     ],
   },
   {

@@ -12,5 +12,6 @@ export interface UsageDay {
 export interface UsageReport {
   days: UsageDay[];
   machine: string;
-  timezone: string;
+  providers?: string[];
+  timezone?: string;
 }

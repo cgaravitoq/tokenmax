@@ -7,7 +7,8 @@ import {
   registerLogin,
   rotateApiKey,
 } from "@/server/auth";
-import type { UsageRange, UsageReport } from "@/server/usage";
+import { parseReport } from "@/server/report";
+import type { UsageRange } from "@/server/usage";
 import {
   authenticateApiKey,
   hashApiKey,
@@ -17,65 +18,6 @@ import {
 } from "@/server/usage";
 
 const maxReportBytes = 1024 * 1024;
-
-const calendarDate = z
-  .string("invalid date")
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "invalid date")
-  .refine(isCalendarDate, "invalid date");
-
-function canonicalTimezone(value: string): string | null {
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone: value,
-    }).resolvedOptions().timeZone;
-  } catch {
-    return null;
-  }
-}
-
-const usageDay = z.object(
-  {
-    date: calendarDate,
-    provider: z
-      .string("invalid provider")
-      .min(1, "invalid provider")
-      .max(64, "invalid provider"),
-    model: z
-      .string("invalid model")
-      .min(1, "invalid model")
-      .max(128, "invalid model"),
-    input: z.int("invalid input").min(0, "invalid input"),
-    output: z.int("invalid output").min(0, "invalid output"),
-    cache_create: z.int("invalid cache_create").min(0, "invalid cache_create"),
-    cache_read: z.int("invalid cache_read").min(0, "invalid cache_read"),
-    cost_usd: z.number("invalid cost_usd").min(0, "invalid cost_usd"),
-  },
-  "invalid report",
-);
-
-const usageReport = z.object(
-  {
-    machine: z
-      .string("invalid machine")
-      .regex(/^[A-Za-z0-9._-]{1,64}$/, "invalid machine"),
-    timezone: z
-      .string("invalid timezone")
-      .transform((value, ctx) => {
-        const zone = canonicalTimezone(value);
-        if (zone === null) {
-          ctx.addIssue({ code: "custom", message: "invalid timezone" });
-          return z.NEVER;
-        }
-        return zone;
-      })
-      .optional(),
-    days: z
-      .array(usageDay, "invalid days")
-      .min(1, "invalid days")
-      .max(2000, "invalid days"),
-  },
-  "invalid report",
-);
 
 const oauthStateCookie = "tokenmax_oauth_state";
 const newKeyCookie = "tokenmax_new_key";
@@ -115,34 +57,8 @@ function bearerKey(header: string | undefined): string | null {
   return header?.startsWith(prefix) ? header.slice(prefix.length) : null;
 }
 
-function isCalendarDate(value: string): boolean {
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  return (
-    !Number.isNaN(parsed.getTime()) &&
-    parsed.toISOString().slice(0, 10) === value
-  );
-}
-
 function isUsageRange(value: string): value is UsageRange {
   return usageRanges.some((range) => range === value);
-}
-
-type ReportParseResult =
-  | { ok: true; report: UsageReport }
-  | { ok: false; error: string };
-
-function parseReport(body: string): ReportParseResult {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(body);
-  } catch {
-    return { ok: false, error: "invalid json" };
-  }
-  const report = usageReport.safeParse(payload);
-  if (!report.success) {
-    return { ok: false, error: report.error.issues[0].message };
-  }
-  return { ok: true, report: report.data };
 }
 
 app.get("/api/health", (context) => context.json({ ok: true }));

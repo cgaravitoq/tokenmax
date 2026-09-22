@@ -2,7 +2,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { z } from "zod";
+import {
+  parseReport,
+  usageReport,
+  type UsageReport as WireUsageReport,
+} from "../../../apps/worker/src/server/report";
 import { antigravityConversationsDir } from "./antigravity";
 import { sinceArgument } from "./ccusage";
 import { type CollectResult, collect } from "./collect";
@@ -14,38 +18,7 @@ import { type CollectorPaths, collectorPaths } from "./paths";
 import { litellmPricesUrl } from "./pricing";
 import { writeConversation } from "./test/antigravity-fixture";
 import { writeTranscript } from "./test/devin-fixture";
-import type { UsageDay } from "./usage";
-
-const isCalendarDate = (value: string): boolean => {
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  return (
-    !Number.isNaN(parsed.getTime()) &&
-    parsed.toISOString().slice(0, 10) === value
-  );
-};
-
-const usageReport = z.object({
-  days: z
-    .array(
-      z.object({
-        cache_create: z.int().min(0),
-        cache_read: z.int().min(0),
-        cost_usd: z.number().min(0),
-        date: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .refine(isCalendarDate),
-        input: z.int().min(0),
-        model: z.string().min(1).max(128),
-        output: z.int().min(0),
-        provider: z.string().min(1).max(64),
-      }),
-    )
-    .min(1)
-    .max(2000),
-  machine: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/),
-  timezone: z.string().min(1),
-});
+import type { UsageDay, UsageReport } from "./usage";
 
 const identity = { hostname: "test-host", platformUuid: "abc-123" };
 const key = "tmx_secret_value";
@@ -137,13 +110,9 @@ const reportFetcher = (
 ): Fetcher => {
   return async (url, init) => {
     requests.push({ init, url });
-    const parsed = usageReport.safeParse(JSON.parse(String(init.body)));
-    if (!parsed.success) {
-      throw new Error(
-        parsed.error.issues
-          .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-          .join("; "),
-      );
+    const parsed = parseReport(String(init.body));
+    if (!parsed.ok) {
+      throw new Error(parsed.error);
     }
     return { status, text: async () => body };
   };
@@ -186,6 +155,20 @@ afterEach(async () => {
 });
 
 describe("collect", () => {
+  it("declares the report the worker's parser accepts", () => {
+    const report: UsageReport = {
+      days: expectedDays,
+      machine: "abc-123",
+      providers: ["claude"],
+      timezone: "Europe/Madrid",
+    };
+    const wire: WireUsageReport = report;
+    const parsed: UsageReport = usageReport.parse(wire);
+    const back: WireUsageReport = parsed;
+
+    expect(back).toEqual(report);
+  });
+
   it("reports the mapped days to the tokenmax report endpoint", async () => {
     await writeConfig(paths.configFile, {
       targets: [{ key, url: "http://localhost:8797/" }],
@@ -236,6 +219,7 @@ describe("collect", () => {
     ).toEqual({
       days: expectedDays,
       machine: "abc-123",
+      providers: ["antigravity", "claude", "codex", "devin", "pi"],
       timezone: "Europe/Madrid",
     });
   });
@@ -717,6 +701,57 @@ describe("collect", () => {
     );
   });
 
+  it("names every provider the report covers", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-09T12:00:00.000Z"),
+          input: 10,
+          modelCode: 1318,
+          output: 10,
+        },
+      ],
+    });
+    const transcripts = devinTranscriptsDir(home);
+    await mkdir(transcripts, { recursive: true });
+    writeTranscript(join(transcripts, "abiding-hall.json"), [
+      {
+        at: new Date("2026-09-09T12:00:00.000Z"),
+        model: "claude-fable-5-1-high",
+        output: 5,
+        prompt: 7,
+      },
+    ]);
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":5}'),
+        [],
+      ),
+      identity,
+      runner: dailyRunner(sample, []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toMatchObject({ kind: "reported" });
+    expect(JSON.parse(String(requests[0].init.body)).providers).toEqual([
+      "antigravity",
+      "claude",
+      "codex",
+      "devin",
+      "pi",
+    ]);
+  });
+
   it("reports around a conversation it cannot read and names it", async () => {
     await writeConfig(paths.configFile, { targets: [target] });
     const conversations = antigravityConversationsDir(home);
@@ -755,6 +790,12 @@ describe("collect", () => {
       ],
     });
     expect(JSON.parse(String(requests[0].init.body)).days).toHaveLength(4);
+    expect(JSON.parse(String(requests[0].init.body)).providers).toEqual([
+      "claude",
+      "codex",
+      "devin",
+      "pi",
+    ]);
   });
 
   it("names the target with the status and the body when the key is rejected", async () => {
@@ -776,6 +817,45 @@ describe("collect", () => {
       ],
       warnings: [],
     });
+  });
+
+  it("rejects a report body the worker's parser rejects", async () => {
+    const fetcher = reportFetcher([], 200, '{"accepted":1}');
+
+    await expect(
+      fetcher(`${url}/api/report`, {
+        body: JSON.stringify({
+          days: expectedDays,
+          machine: "abc-123",
+          timezone: "Mars/Olympus",
+        }),
+        method: "POST",
+      }),
+    ).rejects.toThrow("invalid timezone");
+  });
+
+  it("names a 200 whose body is not the response the worker sends", async () => {
+    await writeConfig(paths.configFile, { targets: [target] });
+
+    for (const body of ['{"accepted":1.5}', "<html>maintenance</html>"]) {
+      const requests: Request[] = [];
+      const result = await collect({
+        env: { home },
+        fetcher: reportFetcher(requests, 200, body),
+        identity,
+        runner: dailyRunner(sample, []),
+        today: new Date("2026-09-10T12:00:00.000Z"),
+      });
+
+      expect(result).toEqual({
+        kind: "reported",
+        machine: "abc-123",
+        targets: [
+          { message: `tokenmax responded an unexpected body: ${body}`, url },
+        ],
+        warnings: [],
+      });
+    }
   });
 
   it("reports the same days to every target with its own key", async () => {
@@ -875,7 +955,101 @@ describe("collect", () => {
     });
   });
 
-  it("slices a 2500 row report into requests of at most 1000 rows", async () => {
+  it("keeps every date of a multi-source report in one request", async () => {
+    await writeConfig(paths.configFile, {
+      targets: [target],
+      timezone: "UTC",
+    });
+    const conversations = antigravityConversationsDir(home);
+    await mkdir(conversations, { recursive: true });
+    writeConversation(join(conversations, "a.db"), {
+      generations: [[1318, "gemini-3.8-flash"]],
+      steps: [
+        {
+          at: new Date("2026-09-05T12:00:00.000Z"),
+          input: 10,
+          modelCode: 1318,
+          output: 10,
+        },
+      ],
+    });
+    const daily = {
+      daily: Array.from({ length: 2500 }, (_, index) => ({
+        agents: [
+          {
+            agent: "claude",
+            modelBreakdowns: [
+              {
+                cacheCreationTokens: 0,
+                cacheReadTokens: 0,
+                cost: 0,
+                inputTokens: 1,
+                modelName: `model-${index}`,
+                outputTokens: 1,
+              },
+            ],
+          },
+        ],
+        period: new Date(Date.UTC(2026, 8, 1 + Math.floor(index / 300)))
+          .toISOString()
+          .slice(0, 10),
+      })),
+    };
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(async (url, init) => {
+        requests.push({ init, url });
+        const parsed = parseReport(String(init.body));
+        if (!parsed.ok) {
+          throw new Error(parsed.error);
+        }
+        return {
+          status: 200,
+          text: async () =>
+            JSON.stringify({ accepted: parsed.report.days.length }),
+        };
+      }, []),
+      identity,
+      runner: dailyRunner(JSON.stringify(daily), []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "abc-123",
+      targets: [{ accepted: 2501, url }],
+      warnings: [],
+    });
+    const slices = requests.map(
+      (request) => JSON.parse(String(request.init.body)).days as UsageDay[],
+    );
+    expect(slices.flat()).toHaveLength(2501);
+    for (const days of slices) {
+      const dates = days.map((day) => day.date);
+      expect(dates).toEqual([...dates].sort());
+    }
+    const windows = slices.map((days) => {
+      const dates = days.map((day) => day.date).sort();
+      return { end: dates[dates.length - 1], start: dates[0] };
+    });
+    const overlaps = windows.flatMap((window, index) =>
+      windows
+        .slice(index + 1)
+        .filter(
+          (other) => window.start <= other.end && other.start <= window.end,
+        )
+        .map(
+          (other) =>
+            `${window.start}..${window.end} overlaps ${other.start}..${other.end}`,
+        ),
+    );
+    expect(overlaps).toEqual([]);
+    expect(slices.map((days) => days.length)).toEqual([900, 901, 700]);
+  });
+
+  it("reports a date carrying more rows than the packing bound in one request", async () => {
     await writeConfig(paths.configFile, {
       targets: [target],
       timezone: "UTC",
@@ -897,9 +1071,7 @@ describe("collect", () => {
             ],
           },
         ],
-        period: new Date(Date.UTC(2026, 8, 1 + Math.floor(index / 200)))
-          .toISOString()
-          .slice(0, 10),
+        period: "2026-09-05",
       })),
     };
     const requests: Request[] = [];
@@ -908,18 +1080,14 @@ describe("collect", () => {
       env: { home },
       fetcher: async (url, init) => {
         requests.push({ init, url });
-        const parsed = usageReport.safeParse(JSON.parse(String(init.body)));
-        if (!parsed.success) {
-          throw new Error(
-            parsed.error.issues
-              .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-              .join("; "),
-          );
+        const parsed = parseReport(String(init.body));
+        if (!parsed.ok) {
+          throw new Error(parsed.error);
         }
         return {
           status: 200,
           text: async () =>
-            JSON.stringify({ accepted: parsed.data.days.length }),
+            JSON.stringify({ accepted: parsed.report.days.length }),
         };
       },
       identity,
@@ -933,11 +1101,12 @@ describe("collect", () => {
       targets: [{ accepted: 2500, url }],
       warnings: [],
     });
-    expect(
-      requests.map(
-        (request) => JSON.parse(String(request.init.body)).days.length,
-      ),
-    ).toEqual([1000, 1000, 500]);
+    expect(requests).toHaveLength(1);
+    const days = JSON.parse(String(requests[0].init.body)).days as UsageDay[];
+    expect(days).toHaveLength(2500);
+    expect(new Set(days.map((day) => day.date))).toEqual(
+      new Set(["2026-09-05"]),
+    );
   });
 
   it("reports nothing without calling tokenmax when there is no usage", async () => {
@@ -1027,6 +1196,10 @@ describe("collect", () => {
         output: 5,
         provider: "devin",
       },
+    ]);
+    expect(JSON.parse(String(requests[0].init.body)).providers).toEqual([
+      "antigravity",
+      "devin",
     ]);
   });
 
