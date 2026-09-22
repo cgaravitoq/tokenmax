@@ -61,6 +61,10 @@ export const usageReport = z.object(
         return zone;
       })
       .optional(),
+    providers: z
+      .array(providerName, "invalid providers")
+      .max(64, "invalid providers")
+      .optional(),
     days: z
       .array(usageDay, "invalid days")
       .min(1, "invalid days")

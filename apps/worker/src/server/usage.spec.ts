@@ -62,8 +62,9 @@ function report(
   machine: string,
   days: UsageDay[],
   timezone?: string,
+  providers?: string[],
 ): UsageReport {
-  return { machine, days, timezone };
+  return { machine, days, timezone, providers };
 }
 
 function tokensDay(date: string, tokens: number): UsageDay {
@@ -178,6 +179,138 @@ describe("recordUsage", () => {
         cache_read: 3,
         cost_usd: 0.2,
       },
+    ]);
+  });
+
+  it("removes the models a report of that provider no longer carries", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const userId = seedUser(sqlite);
+
+    await recordUsage(
+      db,
+      userId,
+      report("mac-1", [day({ model: "claude-opus-5" })], "UTC", ["anthropic"]),
+      reportedAt,
+    );
+    await recordUsage(
+      db,
+      userId,
+      report("mac-1", [day({ model: "claude-fable-5-1" })], "UTC", [
+        "anthropic",
+      ]),
+      reportedAt,
+    );
+
+    expect(
+      sqlite.query<{ model: string }>(
+        "SELECT model FROM usage_days ORDER BY model",
+      ),
+    ).toEqual([{ model: "claude-fable-5-1" }]);
+  });
+
+  it("removes the days inside the window the report does not carry", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const userId = seedUser(sqlite);
+
+    await recordUsage(
+      db,
+      userId,
+      report(
+        "mac-1",
+        [
+          tokensDay("2026-09-08", 5),
+          tokensDay("2026-09-09", 6),
+          tokensDay("2026-09-10", 7),
+        ],
+        "UTC",
+        ["anthropic"],
+      ),
+      reportedAt,
+    );
+    await recordUsage(
+      db,
+      userId,
+      report(
+        "mac-1",
+        [tokensDay("2026-09-08", 5), tokensDay("2026-09-10", 7)],
+        "UTC",
+        ["anthropic"],
+      ),
+      reportedAt,
+    );
+
+    expect(
+      sqlite.query<{ date: string }>(
+        "SELECT date FROM usage_days ORDER BY date",
+      ),
+    ).toEqual([{ date: "2026-09-08" }, { date: "2026-09-10" }]);
+  });
+
+  it("leaves the rows of a provider the report does not cover", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const userId = seedUser(sqlite);
+
+    await recordUsage(
+      db,
+      userId,
+      report(
+        "mac-1",
+        [
+          day({ model: "claude-opus-5" }),
+          day({ model: "gemini-3.8-flash", provider: "antigravity" }),
+        ],
+        "UTC",
+        ["anthropic", "antigravity"],
+      ),
+      reportedAt,
+    );
+    await recordUsage(
+      db,
+      userId,
+      report("mac-1", [day({ model: "claude-fable-5-1" })], "UTC", [
+        "anthropic",
+      ]),
+      reportedAt,
+    );
+
+    expect(
+      sqlite.query<{ model: string; provider: string }>(
+        "SELECT provider, model FROM usage_days ORDER BY provider, model",
+      ),
+    ).toEqual([
+      { model: "claude-fable-5-1", provider: "anthropic" },
+      { model: "gemini-3.8-flash", provider: "antigravity" },
+    ]);
+  });
+
+  it("a report without providers prunes nothing and stores its days", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const userId = seedUser(sqlite);
+
+    await recordUsage(
+      db,
+      userId,
+      report("mac-1", [day({ model: "claude-opus-5" })], "UTC", ["anthropic"]),
+      reportedAt,
+    );
+    await recordUsage(
+      db,
+      userId,
+      report("mac-1", [day({ input: 11, model: "claude-fable-5-1" })], "UTC"),
+      reportedAt,
+    );
+
+    expect(
+      sqlite.query<{ input: number; model: string }>(
+        "SELECT model, input FROM usage_days ORDER BY model",
+      ),
+    ).toEqual([
+      { input: 11, model: "claude-fable-5-1" },
+      { input: 10, model: "claude-opus-5" },
     ]);
   });
 

@@ -108,6 +108,17 @@ const constraints: ConstraintCase[] = [
     ],
   },
   {
+    field: "providers",
+    scope: "report",
+    accept: [["anthropic", "antigravity"], []],
+    reject: [
+      [["p".repeat(65)], "invalid provider"],
+      [["", "anthropic"], "invalid provider"],
+      ["anthropic", "invalid providers"],
+      [Array.from({ length: 65 }, () => "anthropic"), "invalid providers"],
+    ],
+  },
+  {
     field: "provider",
     scope: "day",
     accept: ["p".repeat(64)],

@@ -84,6 +84,9 @@ async function runBatches(
   }
 }
 
+const pruneDaySql = `DELETE FROM usage_days
+WHERE user_id = ? AND machine_id = ? AND provider = ? AND date >= ? AND date <= ?`;
+
 const upsertDaySql = `INSERT INTO usage_days (
   user_id, machine_id, date, provider, model, input, output, cache_create,
   cache_read, cost_usd
@@ -125,6 +128,9 @@ export async function recordUsage(
 ): Promise<void> {
   const timezone = report.timezone ?? "UTC";
   const machine = canonicalMachineId(report.machine);
+  const dates = report.days.map((day) => day.date).sort();
+  const from = dates[0];
+  const to = dates[dates.length - 1];
 
   await runBatches(db, [
     db
@@ -137,6 +143,9 @@ export async function recordUsage(
         "INSERT INTO machines (user_id, machine_id, last_seen, timezone) VALUES (?, ?, ?, ?) ON CONFLICT (user_id, machine_id) DO UPDATE SET last_seen = excluded.last_seen, timezone = excluded.timezone",
       )
       .bind(userId, machine, now.toISOString(), timezone),
+    ...(report.providers ?? []).map((provider) =>
+      db.prepare(pruneDaySql).bind(userId, machine, provider, from, to),
+    ),
     ...report.days.map((day) =>
       db
         .prepare(upsertDaySql)
