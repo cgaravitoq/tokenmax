@@ -146,6 +146,32 @@ async function report(
   }
 }
 
+function daySlices(days: UsageDay[], size: number): UsageDay[][] {
+  const groups: UsageDay[][] = [];
+  for (const day of days) {
+    const group = groups.at(-1);
+    if (group !== undefined && group[0].date === day.date) {
+      group.push(day);
+    } else {
+      groups.push([day]);
+    }
+  }
+
+  const slices: UsageDay[][] = [];
+  let current: UsageDay[] = [];
+  for (const group of groups) {
+    if (current.length > 0 && current.length + group.length > size) {
+      slices.push(current);
+      current = [];
+    }
+    current.push(...group);
+  }
+  if (current.length > 0) {
+    slices.push(current);
+  }
+  return slices;
+}
+
 async function reportTarget(
   fetcher: Fetcher,
   target: CollectorTarget,
@@ -153,14 +179,11 @@ async function reportTarget(
   requestTimeoutMs: number,
 ): Promise<TargetResult> {
   let accepted = 0;
-  for (let start = 0; start < usage.days.length; start += sliceSize) {
+  for (const slice of daySlices(usage.days, sliceSize)) {
     const result = await report(
       fetcher,
       target,
-      JSON.stringify({
-        ...usage,
-        days: usage.days.slice(start, start + sliceSize),
-      }),
+      JSON.stringify({ ...usage, days: slice }),
       requestTimeoutMs,
     );
     if ("message" in result) {

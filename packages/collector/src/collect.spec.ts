@@ -858,7 +858,7 @@ describe("collect", () => {
     });
   });
 
-  it("slices a 2500 row report into requests of at most 1000 rows", async () => {
+  it("keeps every day of a 2500 row report in one request", async () => {
     await writeConfig(paths.configFile, {
       targets: [target],
       timezone: "UTC",
@@ -880,7 +880,7 @@ describe("collect", () => {
             ],
           },
         ],
-        period: new Date(Date.UTC(2026, 8, 1 + Math.floor(index / 200)))
+        period: new Date(Date.UTC(2026, 8, 1 + Math.floor(index / 300)))
           .toISOString()
           .slice(0, 10),
       })),
@@ -912,11 +912,14 @@ describe("collect", () => {
       targets: [{ accepted: 2500, url }],
       warnings: [],
     });
-    expect(
-      requests.map(
-        (request) => JSON.parse(String(request.init.body)).days.length,
-      ),
-    ).toEqual([1000, 1000, 500]);
+    const slices = requests.map(
+      (request) => JSON.parse(String(request.init.body)).days as UsageDay[],
+    );
+    expect(slices.map((days) => days.length)).toEqual([900, 900, 700]);
+    const dateSlots = slices.flatMap((days) => [
+      ...new Set(days.map((day) => day.date)),
+    ]);
+    expect(new Set(dateSlots).size).toBe(dateSlots.length);
   });
 
   it("reports nothing without calling tokenmax when there is no usage", async () => {
