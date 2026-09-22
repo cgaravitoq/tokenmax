@@ -73,12 +73,17 @@ interface LocalStep {
   output: number;
 }
 
+export interface MappedDays {
+  days: UsageDay[];
+  warnings: string[];
+}
+
 function mapLocalSteps(
   steps: LocalStep[],
   provider: string,
   timezone: string,
   priceOf: (model: string) => ModelPrice | undefined,
-): UsageDay[] {
+): MappedDays {
   const rows = new Map<string, UsageDay>();
 
   for (const step of steps) {
@@ -98,27 +103,34 @@ function mapLocalSteps(
     addRow(rows, row);
   }
 
+  const unpriced = new Set<string>();
   for (const row of rows.values()) {
     const price = priceOf(row.model);
-    row.cost_usd =
-      price === undefined
-        ? 0
-        : costOf(price, {
-            cacheCreate: row.cache_create,
-            cacheRead: row.cache_read,
-            input: row.input,
-            output: row.output,
-          });
+    if (price === undefined) {
+      unpriced.add(row.model);
+      continue;
+    }
+    row.cost_usd = costOf(price, {
+      cacheCreate: row.cache_create,
+      cacheRead: row.cache_read,
+      input: row.input,
+      output: row.output,
+    });
   }
 
-  return sortedRows(rows);
+  return {
+    days: sortedRows(rows),
+    warnings: [...unpriced].map(
+      (model) => `${provider}: no price for ${model}`,
+    ),
+  };
 }
 
 export function mapAntigravitySteps(
   steps: AntigravityStep[],
   timezone: string,
   prices: PriceTable,
-): UsageDay[] {
+): MappedDays {
   return mapLocalSteps(
     steps,
     antigravityProvider,
@@ -131,7 +143,7 @@ export function mapDevinSteps(
   steps: DevinStep[],
   timezone: string,
   prices: PriceTable,
-): UsageDay[] {
+): MappedDays {
   return mapLocalSteps(
     steps.map((step) => ({ ...step, model: litellmModel(step.model) })),
     devinProvider,

@@ -17,6 +17,7 @@ import { type MachineIdentity, machineId } from "./machine";
 import {
   antigravityProvider,
   devinProvider,
+  type MappedDays,
   mapAntigravitySteps,
   mapCcusageDays,
   mapDevinSteps,
@@ -80,13 +81,8 @@ function acceptedCount(body: string): number | null {
   return typeof accepted === "number" ? accepted : null;
 }
 
-interface LocalRows {
-  days: UsageDay[];
-  warnings: string[];
-}
-
 interface LocalSource<Step extends { at: Date }> {
-  map: (steps: Step[], timezone: string, prices: PriceTable) => UsageDay[];
+  map: (steps: Step[], timezone: string, prices: PriceTable) => MappedDays;
   provider: string;
   read: (home: string) => Promise<{ failures: string[]; steps: Step[] }>;
 }
@@ -178,7 +174,7 @@ async function reportTarget(
 async function localDays<Step extends { at: Date }>(
   source: LocalSource<Step>,
   window: LocalWindow,
-): Promise<LocalRows> {
+): Promise<MappedDays> {
   try {
     const usage = await source.read(window.home);
     const warnings = usage.failures.map(
@@ -196,7 +192,11 @@ async function localDays<Step extends { at: Date }>(
       window.today,
       window.requestTimeoutMs,
     );
-    return { days: source.map(steps, window.timezone, prices), warnings };
+    const mapped = source.map(steps, window.timezone, prices);
+    return {
+      days: mapped.days,
+      warnings: [...warnings, ...mapped.warnings],
+    };
   } catch (error) {
     return {
       days: [],

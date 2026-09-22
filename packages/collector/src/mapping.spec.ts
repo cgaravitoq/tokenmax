@@ -165,15 +165,61 @@ describe("mapAntigravitySteps", () => {
   };
 
   it("sums each model per calendar day of the timezone and prices it", () => {
-    expect(mapAntigravitySteps(steps, "Europe/Madrid", prices)).toEqual([
-      previousDay,
-      flashDay,
-      unknownDay,
+    expect(mapAntigravitySteps(steps, "Europe/Madrid", prices)).toEqual({
+      days: [previousDay, flashDay, unknownDay],
+      warnings: ["antigravity: no price for gemini-unknown"],
+    });
+  });
+
+  it("warns once for a model the table does not cover and keeps its rows", () => {
+    const unknown: AntigravityStep[] = [
+      {
+        at: new Date("2026-09-12T12:00:00.000Z"),
+        cacheRead: 0,
+        input: 10,
+        model: "gemini-unknown",
+        output: 1,
+      },
+      {
+        at: new Date("2026-09-13T12:00:00.000Z"),
+        cacheRead: 0,
+        input: 20,
+        model: "gemini-unknown",
+        output: 2,
+      },
+    ];
+
+    const mapped = mapAntigravitySteps(unknown, "UTC", prices);
+
+    expect(mapped.warnings).toEqual([
+      "antigravity: no price for gemini-unknown",
+    ]);
+    expect(mapped.days).toEqual([
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 0,
+        date: "2026-09-12",
+        input: 10,
+        model: "gemini-unknown",
+        output: 1,
+        provider: "antigravity",
+      },
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 0,
+        date: "2026-09-13",
+        input: 20,
+        model: "gemini-unknown",
+        output: 2,
+        provider: "antigravity",
+      },
     ]);
   });
 
   it("splits the days by the timezone it is given", () => {
-    const days = mapAntigravitySteps(steps, "UTC", prices).map(
+    const days = mapAntigravitySteps(steps, "UTC", prices).days.map(
       (day) => [day.date, day.model, day.input] as const,
     );
 
@@ -235,47 +281,50 @@ describe("mapDevinSteps", () => {
   ];
 
   it("collapses the effort levels of a model into its LiteLLM name and prices it", () => {
-    expect(mapDevinSteps(steps, "Europe/Madrid", prices)).toEqual([
-      {
-        cache_create: 3652408,
-        cache_read: 120688310,
-        cost_usd: costOf(fable, {
-          cacheCreate: 3652408,
-          cacheRead: 120688310,
+    expect(mapDevinSteps(steps, "Europe/Madrid", prices)).toEqual({
+      days: [
+        {
+          cache_create: 3652408,
+          cache_read: 120688310,
+          cost_usd: costOf(fable, {
+            cacheCreate: 3652408,
+            cacheRead: 120688310,
+            input: 1444,
+            output: 516124,
+          }),
+          date: "2026-09-19",
           input: 1444,
+          model: "claude-fable-5-1",
           output: 516124,
-        }),
-        date: "2026-09-19",
-        input: 1444,
-        model: "claude-fable-5-1",
-        output: 516124,
-        provider: "devin",
-      },
-      {
-        cache_create: 24494,
-        cache_read: 0,
-        cost_usd: costOf(sol, {
-          cacheCreate: 24494,
-          cacheRead: 0,
+          provider: "devin",
+        },
+        {
+          cache_create: 24494,
+          cache_read: 0,
+          cost_usd: costOf(sol, {
+            cacheCreate: 24494,
+            cacheRead: 0,
+            input: 3,
+            output: 114,
+          }),
+          date: "2026-09-19",
           input: 3,
+          model: "gpt-5.6-sol",
           output: 114,
-        }),
-        date: "2026-09-19",
-        input: 3,
-        model: "gpt-5.6-sol",
-        output: 114,
-        provider: "devin",
-      },
-      {
-        cache_create: 0,
-        cache_read: 0,
-        cost_usd: 0,
-        date: "2026-09-19",
-        input: 17615,
-        model: "swe-2",
-        output: 48,
-        provider: "devin",
-      },
-    ]);
+          provider: "devin",
+        },
+        {
+          cache_create: 0,
+          cache_read: 0,
+          cost_usd: 0,
+          date: "2026-09-19",
+          input: 17615,
+          model: "swe-2",
+          output: 48,
+          provider: "devin",
+        },
+      ],
+      warnings: ["devin: no price for swe-2"],
+    });
   });
 });

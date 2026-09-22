@@ -544,7 +544,7 @@ describe("collect", () => {
     writeTranscript(join(transcripts, "ok.json"), [
       {
         at: new Date("2026-09-10T12:00:00.000Z"),
-        model: "swe-2-medium",
+        model: "claude-fable-5-1-high",
         output: 10,
         prompt: 10,
       },
@@ -573,6 +573,68 @@ describe("collect", () => {
       ],
     });
     expect(JSON.parse(String(requests[0].init.body)).days).toHaveLength(4);
+  });
+
+  it("warns once about a model the prices do not cover and reports its rows", async () => {
+    await writeConfig(paths.configFile, { targets: [target] });
+    const transcripts = devinTranscriptsDir(home);
+    await mkdir(transcripts, { recursive: true });
+    writeTranscript(join(transcripts, "ok.json"), [
+      {
+        at: new Date("2026-09-09T12:00:00.000Z"),
+        model: "brand-new-model-high",
+        output: 5,
+        prompt: 7,
+      },
+      {
+        at: new Date("2026-09-10T12:00:00.000Z"),
+        model: "brand-new-model-high",
+        output: 3,
+        prompt: 4,
+      },
+    ]);
+    const requests: Request[] = [];
+
+    const result = await collect({
+      env: { home },
+      fetcher: pricingFetcher(
+        reportFetcher(requests, 200, '{"accepted":2}'),
+        [],
+      ),
+      identity,
+      runner: dailyRunner('{"daily":[]}', []),
+      today: new Date("2026-09-10T23:30:00.000Z"),
+      timezone: "UTC",
+    });
+
+    expect(result).toEqual({
+      kind: "reported",
+      machine: "abc-123",
+      targets: [{ accepted: 2, url }],
+      warnings: ["devin: no price for brand-new-model"],
+    });
+    expect(JSON.parse(String(requests[0].init.body)).days).toEqual([
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 0,
+        date: "2026-09-09",
+        input: 7,
+        model: "brand-new-model",
+        output: 5,
+        provider: "devin",
+      },
+      {
+        cache_create: 0,
+        cache_read: 0,
+        cost_usd: 0,
+        date: "2026-09-10",
+        input: 4,
+        model: "brand-new-model",
+        output: 3,
+        provider: "devin",
+      },
+    ]);
   });
 
   it("leaves the prices alone when no Antigravity step is in the window", async () => {
