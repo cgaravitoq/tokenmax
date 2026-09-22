@@ -23,6 +23,20 @@ const isEmptyRow = (row: UsageDay): boolean =>
   row.cache_create === 0 &&
   row.cache_read === 0;
 
+function addRow(rows: Map<string, UsageDay>, row: UsageDay): void {
+  const key = rowKey(row);
+  const existing = rows.get(key);
+  if (existing === undefined) {
+    rows.set(key, row);
+    return;
+  }
+  existing.cache_create += row.cache_create;
+  existing.cache_read += row.cache_read;
+  existing.cost_usd += row.cost_usd;
+  existing.input += row.input;
+  existing.output += row.output;
+}
+
 export function mapCcusageDays(output: CcusageDaily): UsageDay[] {
   const rows = new Map<string, UsageDay>();
 
@@ -42,17 +56,7 @@ export function mapCcusageDays(output: CcusageDaily): UsageDay[] {
         if (isEmptyRow(row)) {
           continue;
         }
-        const key = rowKey(row);
-        const existing = rows.get(key);
-        if (existing === undefined) {
-          rows.set(key, row);
-          continue;
-        }
-        existing.cache_create += row.cache_create;
-        existing.cache_read += row.cache_read;
-        existing.cost_usd += row.cost_usd;
-        existing.input += row.input;
-        existing.output += row.output;
+        addRow(rows, row);
       }
     }
   }
@@ -91,16 +95,7 @@ function mapLocalSteps(
     if (isEmptyRow(row)) {
       continue;
     }
-    const key = rowKey(row);
-    const existing = rows.get(key);
-    if (existing === undefined) {
-      rows.set(key, row);
-      continue;
-    }
-    existing.cache_create += row.cache_create;
-    existing.cache_read += row.cache_read;
-    existing.input += row.input;
-    existing.output += row.output;
+    addRow(rows, row);
   }
 
   for (const row of rows.values()) {

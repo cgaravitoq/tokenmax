@@ -16,6 +16,14 @@ export interface DevinUsage {
   steps: DevinStep[];
 }
 
+export interface ReaderSteps<Step> {
+  failures: string[];
+  steps: Step[];
+}
+
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 const unknownModel = "devin-unknown";
 
 const metrics = z.object({
@@ -69,7 +77,11 @@ function parseTranscript(source: string): DevinStep[] {
   return steps;
 }
 
-export async function readDevinSteps(dir: string): Promise<DevinUsage> {
+export async function readDirectorySteps<Step>(
+  dir: string,
+  suffix: string,
+  read: (file: string) => Promise<ReaderSteps<Step>>,
+): Promise<ReaderSteps<Step>> {
   let files: string[];
   try {
     files = await readdir(dir);
@@ -79,16 +91,26 @@ export async function readDevinSteps(dir: string): Promise<DevinUsage> {
     }
     throw error;
   }
-  const steps: DevinStep[] = [];
+  const steps: Step[] = [];
   const failures: string[] = [];
-  for (const file of files.filter((name) => name.endsWith(".json")).sort()) {
-    const path = resolve(dir, file);
+  for (const name of files.filter((file) => file.endsWith(suffix)).sort()) {
+    const file = resolve(dir, name);
     try {
-      steps.push(...parseTranscript(await readFile(path, "utf8")));
+      const readFile = await read(file);
+      steps.push(...readFile.steps);
+      failures.push(
+        ...readFile.failures.map((failure) => `${file}: ${failure}`),
+      );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      failures.push(`${path}: ${message}`);
+      failures.push(`${file}: ${messageOf(error)}`);
     }
   }
   return { failures, steps };
+}
+
+export async function readDevinSteps(dir: string): Promise<DevinUsage> {
+  return readDirectorySteps(dir, ".json", async (file) => ({
+    failures: [],
+    steps: parseTranscript(await readFile(file, "utf8")),
+  }));
 }
