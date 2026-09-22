@@ -124,6 +124,11 @@ function validateAutoMergeWorkflow(source: string): void {
   if (!Array.isArray(job.steps) || job.steps.length !== 4) {
     throw new Error("Dependabot auto-merge must have exactly four steps");
   }
+  if (job["timeout-minutes"] !== 20) {
+    throw new Error(
+      "Dependabot auto-merge must cap the wait with timeout-minutes, so a stalled run fails in minutes instead of burning the runner",
+    );
+  }
   const metadata = step(job.steps, 0, "Dependabot metadata step");
   if (
     metadata.id !== "metadata" ||
@@ -136,16 +141,30 @@ function validateAutoMergeWorkflow(source: string): void {
 
   const await_ = step(job.steps, 1, "Dependabot check-gate step");
   const awaitRun = typeof await_.run === "string" ? await_.run : "";
-  const blocks = awaitRun
-    .split("\n")
-    .some(
-      (line) =>
-        line.trim() ===
-        'gh pr checks "$PR_URL" --watch --fail-fast --interval 20',
-    );
-  if (!blocks || "continue-on-error" in await_) {
+  if (awaitRun.includes("gh pr checks")) {
     throw new Error(
-      "Dependabot auto-merge must block on the pull request check conclusions, with a failing watch that no shell fallback or continue-on-error can neutralize",
+      "Dependabot auto-merge must not roll up every check on the pull request head, because that rollup includes the auto-merge run itself",
+    );
+  }
+  const watchesHeadRun =
+    awaitRun.includes("${{ github.event.pull_request.head.sha }}") &&
+    awaitRun
+      .split("\n")
+      .some(
+        (line) =>
+          line.includes("gh run list") &&
+          line.includes("--workflow ci.yml") &&
+          line.includes('--commit "$head_sha"'),
+      ) &&
+    awaitRun
+      .split("\n")
+      .some(
+        (line) =>
+          line.trim() === 'gh run watch "$run_id" --exit-status --interval 20',
+      );
+  if (!watchesHeadRun || "continue-on-error" in await_) {
+    throw new Error(
+      "Dependabot auto-merge must watch the ci workflow run for the pull request head, with a failing watch that no shell fallback or continue-on-error can neutralize",
     );
   }
 
@@ -258,20 +277,61 @@ describe("Dependabot auto-merge workflow", () => {
   it("rejects a gate neutralized while every keyword survives", () => {
     for (const neutralized of [
       autoMergeSource.replace(
-        "--watch --fail-fast --interval 20",
-        "--watch --fail-fast --interval 20 || true",
+        "--exit-status --interval 20",
+        "--exit-status --interval 20 || true",
       ),
       autoMergeSource.replace(
         "      - name: Squash merge",
         "        continue-on-error: true\n      - name: Squash merge",
       ),
     ]) {
-      expect(neutralized).toContain("gh pr checks");
-      expect(neutralized).toContain("--fail-fast");
+      expect(neutralized).toContain("gh run watch");
+      expect(neutralized).toContain("--exit-status");
       expect(() => validateAutoMergeWorkflow(neutralized)).toThrow(
-        "must block on the pull request check conclusions",
+        "must watch the ci workflow run for the pull request head",
       );
     }
+  });
+
+  it("rejects waiting on the whole check rollup again", () => {
+    const mutated = autoMergeSource.replace(
+      'gh run watch "$run_id" --exit-status --interval 20',
+      'gh pr checks "$PR_URL" --watch --fail-fast --interval 20',
+    );
+    expect(mutated).not.toBe(autoMergeSource);
+    expect(() => validateAutoMergeWorkflow(mutated)).toThrow(
+      "must not roll up every check on the pull request head",
+    );
+  });
+
+  it("rejects watching a run that is not the pull request head", () => {
+    const mutated = autoMergeSource.replace(
+      '--workflow ci.yml --commit "$head_sha"',
+      "--workflow ci.yml",
+    );
+    expect(mutated).not.toBe(autoMergeSource);
+    expect(() => validateAutoMergeWorkflow(mutated)).toThrow(
+      "must watch the ci workflow run for the pull request head",
+    );
+  });
+
+  it("rejects watching a workflow other than ci", () => {
+    const mutated = autoMergeSource.replace(
+      "--workflow ci.yml",
+      "--workflow release.yml",
+    );
+    expect(mutated).not.toBe(autoMergeSource);
+    expect(() => validateAutoMergeWorkflow(mutated)).toThrow(
+      "must watch the ci workflow run for the pull request head",
+    );
+  });
+
+  it("rejects a wait that can outlive the runner", () => {
+    const mutated = autoMergeSource.replace("    timeout-minutes: 20\n", "");
+    expect(mutated).not.toBe(autoMergeSource);
+    expect(() => validateAutoMergeWorkflow(mutated)).toThrow(
+      "must cap the wait with timeout-minutes",
+    );
   });
 
   it("rejects delegating the gate back to --auto", () => {
