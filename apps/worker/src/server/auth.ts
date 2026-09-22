@@ -43,16 +43,15 @@ export async function registerLogin(
 
 export async function rotateApiKey(
   db: D1Database,
-  keyHash: string,
   userId: number,
   newKeyHash: string,
 ): Promise<void> {
   await db.batch([
     db
       .prepare(
-        "UPDATE api_keys SET revoked_at = CURRENT_TIMESTAMP WHERE key_hash = ? AND revoked_at IS NULL",
+        "UPDATE api_keys SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND revoked_at IS NULL",
       )
-      .bind(keyHash),
+      .bind(userId),
     db
       .prepare("INSERT INTO api_keys (key_hash, user_id) VALUES (?, ?)")
       .bind(newKeyHash, userId),

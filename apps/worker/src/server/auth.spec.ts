@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { app } from "@/server/app";
+import { rotateApiKey } from "@/server/auth";
 import { hashApiKey } from "@/server/usage";
 import { createSqliteD1, type SqliteD1TestDatabase } from "@/test/sqlite-d1";
 
@@ -552,6 +553,37 @@ describe("POST /api/keys/rotate", () => {
     expect(
       sqlite.query("SELECT key_hash FROM api_keys WHERE revoked_at IS NULL"),
     ).toEqual([{ key_hash: await hashApiKey(validKey) }]);
+  });
+
+  it("leaves exactly one live key after two sequential rotations", async () => {
+    const sqlite = await seeded();
+    const db = sqlite.asD1();
+    await rotateApiKey(db, 1, await hashApiKey("rotated-a"));
+    await rotateApiKey(db, 1, await hashApiKey("rotated-b"));
+
+    expect(
+      sqlite.query("SELECT key_hash FROM api_keys WHERE revoked_at IS NULL"),
+    ).toEqual([{ key_hash: await hashApiKey("rotated-b") }]);
+  });
+
+  it("revokes every live key of the user on the route", async () => {
+    const sqlite = await seeded();
+    const db = sqlite.asD1();
+    sqlite.exec(
+      `INSERT INTO api_keys (key_hash, user_id) VALUES ('${await hashApiKey("stale-key")}', 1)`,
+    );
+
+    const response = await app.request(
+      `${origin}/api/keys/rotate`,
+      rotateInit(validKey),
+      environment(db),
+    );
+
+    expect(response.status).toBe(200);
+    const rotated = rotateResponse.parse(await response.json());
+    expect(
+      sqlite.query("SELECT key_hash FROM api_keys WHERE revoked_at IS NULL"),
+    ).toEqual([{ key_hash: await hashApiKey(rotated.key) }]);
   });
 
   it("revokes the presented key and inserts the new one in one batch", async () => {

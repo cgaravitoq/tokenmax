@@ -277,11 +277,6 @@ app.post("/api/keys/rotate", async (context) => {
   }
 
   const newKey = generateApiKey();
-  await rotateApiKey(
-    context.env.DB,
-    await hashApiKey(key),
-    userId,
-    await hashApiKey(newKey),
-  );
+  await rotateApiKey(context.env.DB, userId, await hashApiKey(newKey));
   return context.json({ key: newKey });
 });
