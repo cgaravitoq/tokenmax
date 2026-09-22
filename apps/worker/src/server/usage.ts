@@ -83,14 +83,14 @@ export function canonicalMachineId(machine: string): string {
 
 const encoder = new TextEncoder();
 
-const batchLimit = 1000;
+export const d1BatchLimit = 1000;
 
 async function runBatches(
   db: D1Database,
   statements: D1PreparedStatement[],
 ): Promise<void> {
-  for (let start = 0; start < statements.length; start += batchLimit) {
-    await db.batch(statements.slice(start, start + batchLimit));
+  for (let start = 0; start < statements.length; start += d1BatchLimit) {
+    await db.batch(statements.slice(start, start + d1BatchLimit));
   }
 }
 

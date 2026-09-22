@@ -2,10 +2,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { d1BatchLimit } from "@/server/usage";
 
 type SqliteValue = null | number | bigint | string | Uint8Array<ArrayBuffer>;
-
-const maxBatchStatements = 1000;
 
 interface SqliteRow {
   [column: string]: unknown;
@@ -139,9 +138,9 @@ export class SqliteD1TestDatabase {
     statements: D1PreparedStatement[],
   ): Promise<D1Result<T>[]> {
     this.beforeBatch?.();
-    if (statements.length > maxBatchStatements) {
+    if (statements.length > d1BatchLimit) {
       throw new Error(
-        `D1 batch of ${statements.length} statements exceeds the ${maxBatchStatements}-statement limit`,
+        `D1 batch of ${statements.length} statements exceeds the ${d1BatchLimit}-statement limit`,
       );
     }
     const sqliteStatements = statements.map((statement) => {
