@@ -3,6 +3,7 @@ import type { UsageDayReport, UsageRange, UsageReport } from "@/server/usage";
 import {
   authenticateApiKey,
   canonicalMachineId,
+  d1BatchLimit,
   hashApiKey,
   recordUsage,
   summarizeUsage,
@@ -242,9 +243,10 @@ describe("recordUsage", () => {
     ]);
   });
 
-  it("writes nothing when one day of the report fails", async () => {
+  it("writes nothing when one statement of the batch fails", async () => {
     const sqlite = database();
     const db = sqlite.asD1();
+    const batch = vi.spyOn(db, "batch");
     const userId = seedUser(sqlite);
 
     await expect(
@@ -259,6 +261,8 @@ describe("recordUsage", () => {
       ),
     ).rejects.toThrow();
 
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect(batch.mock.calls[0]?.[0]).toHaveLength(4);
     expect(sqlite.query("SELECT * FROM machines")).toEqual([]);
     expect(sqlite.query("SELECT * FROM usage_days")).toEqual([]);
   });
@@ -426,6 +430,31 @@ describe("recordUsage", () => {
     expect(sizes.length).toBeGreaterThan(1);
     for (const size of sizes) expect(size).toBeLessThanOrEqual(1000);
     expect(sqlite.query("SELECT date FROM usage_days")).toHaveLength(1200);
+  });
+
+  it("keeps the batches before the one that fails", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const userId = seedUser(sqlite);
+    const days = manyDays(d1BatchLimit + 1);
+    days[d1BatchLimit] = { ...days[d1BatchLimit], cost_usd: Number.NaN };
+    const committed = days.slice(0, d1BatchLimit - 2).map(({ date }) => date);
+
+    await expect(
+      recordUsage(db, userId, report("mac-1", days), reportedAt),
+    ).rejects.toThrow();
+
+    const stored = sqlite.query<{ date: string }>(
+      "SELECT date FROM usage_days ORDER BY date",
+    );
+    expect(stored.map(({ date }) => date)).toEqual(committed);
+
+    days[d1BatchLimit] = tokensDay(days[d1BatchLimit].date, 1);
+    await recordUsage(db, userId, report("mac-1", days), reportedAt);
+
+    expect(sqlite.query("SELECT date FROM usage_days")).toHaveLength(
+      d1BatchLimit + 1,
+    );
   });
 
   it("rejects a batch above the D1 statement limit", async () => {
