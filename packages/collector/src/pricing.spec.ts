@@ -156,6 +156,22 @@ describe("loadPrices", () => {
     expect(await readFile(pricesFile, "utf8")).toBe(sample);
   });
 
+  it("refetches a fresh cache that holds no prices", async () => {
+    const calls: string[] = [];
+    const now = new Date("2026-09-13T12:00:00.000Z");
+    await writeCache("{}", new Date(now.getTime() - 60 * 1000));
+
+    const table = await loadPrices(
+      fetcherReturning(200, sample, calls),
+      pricesFile,
+      now,
+    );
+
+    expect(calls).toEqual([litellmPricesUrl]);
+    expect(table.size).toBe(2);
+    expect(await readFile(pricesFile, "utf8")).toBe(sample);
+  });
+
   it("keeps the stale cache when the fetch fails", async () => {
     const now = new Date("2026-09-13T12:00:00.000Z");
     await writeCache(sample, new Date(now.getTime() - 25 * 60 * 60 * 1000));

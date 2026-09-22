@@ -78,7 +78,8 @@ async function readCache(
     throw error;
   }
   try {
-    return { modifiedAt, table: parseLitellmPrices(source) };
+    const table = parseLitellmPrices(source);
+    return table.size === 0 ? null : { modifiedAt, table };
   } catch {
     return null;
   }
