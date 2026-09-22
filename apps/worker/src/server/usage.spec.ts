@@ -1097,7 +1097,7 @@ describe("the canonical machine id migration", () => {
 });
 
 describe("the lowercase login migration", () => {
-  it("merges two logins that differ only in case", () => {
+  function seedCaseCollision(): SqliteD1TestDatabase {
     const sqlite = new SqliteD1TestDatabase();
     databases.push(sqlite);
     sqlite.applyMigrations([
@@ -1108,10 +1108,13 @@ describe("the lowercase login migration", () => {
     sqlite.exec(`
       INSERT INTO users (id, github_login, avatar_url) VALUES
         (1, 'OctoCat', 'https://example.com/avatar.png'),
-        (2, 'octocat', 'https://example.com/avatar.png');
+        (2, 'octocat', 'https://example.com/avatar.png'),
+        (3, 'Solo', 'https://example.com/avatar.png');
       INSERT INTO api_keys (key_hash, user_id, created_at) VALUES
         ('old-key', 1, '2026-09-01 08:00:00'),
-        ('new-key', 2, '2026-09-10 09:00:00');
+        ('new-key', 2, '2026-09-10 09:00:00'),
+        ('solo-key-a', 3, '2026-09-05 08:00:00'),
+        ('solo-key-b', 3, '2026-09-06 08:00:00');
       INSERT INTO machines (user_id, machine_id, last_seen, timezone) VALUES
         (1, 'mac-1', '2026-09-01T00:00:00.000Z', 'UTC'),
         (2, 'mac-1', '2026-09-10T00:00:00.000Z', 'Europe/Madrid');
@@ -1128,11 +1131,19 @@ describe("the lowercase login migration", () => {
         (2, 'mac-2', '2026-09-11', 'anthropic', 'claude-opus-5', 7, 0, 0, 0, 0.7,
           '2026-09-11 08:00:00');
     `);
+    return sqlite;
+  }
+
+  it("merges two logins that differ only in case", () => {
+    const sqlite = seedCaseCollision();
 
     sqlite.applyMigrations(["0004_lowercase_github_login.sql"]);
 
-    expect(sqlite.query("SELECT id, github_login FROM users")).toEqual([
+    expect(
+      sqlite.query("SELECT id, github_login FROM users ORDER BY id"),
+    ).toEqual([
       { id: 1, github_login: "octocat" },
+      { id: 3, github_login: "solo" },
     ]);
     expect(
       sqlite.query(
@@ -1153,13 +1164,32 @@ describe("the lowercase login migration", () => {
       { user_id: 1, date: "2026-09-11", input: 7 },
     ]);
     expect(
-      sqlite.query("SELECT key_hash, user_id FROM api_keys ORDER BY key_hash"),
+      sqlite.query(
+        "SELECT key_hash, user_id FROM api_keys WHERE user_id = 1 ORDER BY key_hash",
+      ),
     ).toEqual([
       { key_hash: "new-key", user_id: 1 },
       { key_hash: "old-key", user_id: 1 },
     ]);
     expect(
-      sqlite.query("SELECT key_hash FROM api_keys WHERE revoked_at IS NULL"),
+      sqlite.query(
+        "SELECT key_hash FROM api_keys WHERE user_id = 1 AND revoked_at IS NULL",
+      ),
     ).toEqual([{ key_hash: "new-key" }]);
+  });
+
+  it("leaves the keys of a login that never collided live", () => {
+    const sqlite = seedCaseCollision();
+
+    sqlite.applyMigrations(["0004_lowercase_github_login.sql"]);
+
+    expect(
+      sqlite.query(
+        "SELECT key_hash FROM api_keys WHERE user_id = 3 AND revoked_at IS NULL ORDER BY key_hash",
+      ),
+    ).toEqual([{ key_hash: "solo-key-a" }, { key_hash: "solo-key-b" }]);
+    expect(
+      sqlite.query("SELECT id, github_login FROM users WHERE id = 3"),
+    ).toEqual([{ id: 3, github_login: "solo" }]);
   });
 });

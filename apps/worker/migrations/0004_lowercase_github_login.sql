@@ -73,7 +73,8 @@ WHERE user_id <> (
 );
 
 -- the merge can leave the surviving user with a live key per merged row; the
--- newest key wins, as it does on a sign-in.
+-- newest key wins, as it does on a sign-in. A login that never collided keeps
+-- every key it had.
 UPDATE api_keys
 SET revoked_at = CURRENT_TIMESTAMP
 WHERE revoked_at IS NULL
@@ -82,6 +83,11 @@ WHERE revoked_at IS NULL
 		WHERE newer.user_id = api_keys.user_id
 			AND newer.revoked_at IS NULL
 			AND newer.rowid > api_keys.rowid
+	)
+	AND user_id IN (
+		SELECT MIN(id) FROM users
+		GROUP BY lower(github_login)
+		HAVING COUNT(*) > 1
 	);
 
 DELETE FROM users
