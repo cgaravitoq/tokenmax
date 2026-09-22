@@ -5,14 +5,11 @@
     "target": "ES2022",
     "lib": ["ES2022"],
     "types": ["node"],
-    "allowJs": true,
-    "resolveJsonModule": true,
     "moduleDetection": "force",
     "isolatedModules": true,
 
     "strict": true,
     "noUncheckedIndexedAccess": false,
-    "checkJs": true,
 
     "module": "Preserve",
     "moduleResolution": "Bundler",

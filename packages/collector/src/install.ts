@@ -10,7 +10,12 @@ import {
   runtimeTimezone,
   writeConfig,
 } from "./config";
-import { type CollectorEnv, collectorPaths, processEnv } from "./paths";
+import {
+  type CollectorEnv,
+  collectorPaths,
+  processEnv,
+  systemdUserUnitDir,
+} from "./paths";
 import {
   launchAgentPlist,
   loadCommand,
@@ -55,6 +60,8 @@ const resolvePlatform = (value: NodeJS.Platform): SupportedPlatform => {
 const resolveCliPath = (): string =>
   fileURLToPath(new URL("./cli.ts", import.meta.url));
 
+const canonicalUrl = (url: string): string => url.replace(/\/+$/, "");
+
 function scheduleFiles(
   platform: SupportedPlatform,
   paths: { plist: string; service: string; timer: string },
@@ -73,6 +80,9 @@ async function configuredTargets(
   configFile: string,
 ): Promise<CollectorTarget[]> {
   const existing = await readConfig(configFile);
+  if (existing.kind === "invalid") {
+    throw new Error(existing.message);
+  }
   return existing.kind === "ok" ? existing.config.targets : [];
 }
 
@@ -85,11 +95,12 @@ export async function install(options: InstallOptions): Promise<InstallPlan> {
   if (timezone === null) {
     throw new Error(`invalid timezone: ${requestedTimezone}`);
   }
+  const url = canonicalUrl(options.url);
   const others = (await configuredTargets(paths.configFile)).filter(
-    (target) => target.url !== options.url,
+    (target) => canonicalUrl(target.url) !== url,
   );
   const config = collectorConfig.parse({
-    targets: [...others, { key: options.key, url: options.url }],
+    targets: [...others, { key: options.key, url }],
     timezone,
   });
   const cliPath = options.cliPath ?? resolveCliPath();
@@ -122,6 +133,15 @@ export async function install(options: InstallOptions): Promise<InstallPlan> {
   }
   for (const file of plan.files) {
     log(`schedule: ${file.path}`);
+  }
+  if (platform === "linux") {
+    const unitDir = dirname(paths.service);
+    const systemdDir = systemdUserUnitDir(env);
+    if (unitDir !== systemdDir) {
+      log(
+        `warning: systemd will not read units from ${unitDir}; it reads them from ${systemdDir}`,
+      );
+    }
   }
 
   if (options.dryRun === true) {

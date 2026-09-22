@@ -7,6 +7,24 @@ export interface ScheduleOptions {
 
 export type SupportedPlatform = "darwin" | "linux";
 
+const escapeXml = (value: string): string =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+
+const shellSafe = /^[A-Za-z0-9/._:@+,=^-]+$/;
+
+const quoteForShell = (value: string): string =>
+  shellSafe.test(value) ? value : `'${value.replaceAll("'", () => "'\\''")}'`;
+
+const escapeSystemd = (value: string): string =>
+  value
+    .replaceAll("\\", () => "\\\\")
+    .replaceAll("%", "%%")
+    .replaceAll("$", () => "$$")
+    .replaceAll('"', '\\"');
+
 export function launchAgentPlist(options: ScheduleOptions): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -16,8 +34,8 @@ export function launchAgentPlist(options: ScheduleOptions): string {
   <string>dev.tokenmax.collector</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${options.execPath}</string>
-    <string>${options.cliPath}</string>
+    <string>${escapeXml(options.execPath)}</string>
+    <string>${escapeXml(options.cliPath)}</string>
     <string>collect</string>
   </array>
   <key>StartInterval</key>
@@ -25,9 +43,9 @@ export function launchAgentPlist(options: ScheduleOptions): string {
   <key>RunAtLoad</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>${options.stdoutLog}</string>
+  <string>${escapeXml(options.stdoutLog)}</string>
   <key>StandardErrorPath</key>
-  <string>${options.stderrLog}</string>
+  <string>${escapeXml(options.stderrLog)}</string>
 </dict>
 </plist>
 `;
@@ -39,7 +57,7 @@ Description=Report local token usage to tokenmax
 
 [Service]
 Type=oneshot
-ExecStart="${options.execPath}" "${options.cliPath}" collect
+ExecStart="${escapeSystemd(options.execPath)}" "${escapeSystemd(options.cliPath)}" collect
 `;
 }
 
@@ -63,6 +81,6 @@ export function loadCommand(
   uid: number,
 ): string {
   return platform === "darwin"
-    ? `launchctl bootstrap gui/${uid} ${plistPath}`
+    ? `launchctl bootstrap gui/${uid} ${quoteForShell(plistPath)}`
     : "systemctl --user enable --now tokenmax.timer";
 }

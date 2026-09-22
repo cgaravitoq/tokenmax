@@ -1,13 +1,16 @@
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import fsp from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
 
-export const collectorTarget = z.object({
+const collectorTarget = z.object({
   key: z.string().min(1),
   url: z.url({ protocol: /^https?$/ }),
 });
 
-const timezone = z.string().min(1).optional();
+const timezone = z
+  .string()
+  .refine((value) => canonicalTimezone(value) !== null, "invalid timezone")
+  .optional();
 
 export const collectorConfig = z.object({
   targets: z.array(collectorTarget).min(1),
@@ -52,7 +55,7 @@ export async function readConfig(
 ): Promise<ConfigReadResult> {
   let source: string;
   try {
-    source = await readFile(configFile, "utf8");
+    source = await fsp.readFile(configFile, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return { kind: "missing" };
@@ -89,7 +92,10 @@ export async function writeConfig(
   configFile: string,
   config: CollectorConfig,
 ): Promise<void> {
-  await mkdir(dirname(configFile), { recursive: true });
-  await writeFile(configFile, `${JSON.stringify(config, null, 2)}\n`);
-  await chmod(configFile, 0o600);
+  await fsp.mkdir(dirname(configFile), { recursive: true });
+  const temporary = `${configFile}.tmp`;
+  await fsp.writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, {
+    mode: 0o600,
+  });
+  await fsp.rename(temporary, configFile);
 }

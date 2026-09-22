@@ -1,7 +1,15 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import fsp, {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readConfig, writeConfig } from "./config";
 
 let dir: string;
@@ -80,6 +88,21 @@ describe("readConfig", () => {
     expect(await readConfig(configFile)).toMatchObject({ kind: "invalid" });
   });
 
+  it("rejects a non-canonical stored timezone with a named error", async () => {
+    await writeFile(
+      configFile,
+      JSON.stringify({
+        targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
+        timezone: "Mars/Olympus",
+      }),
+    );
+
+    expect(await readConfig(configFile)).toEqual({
+      kind: "invalid",
+      message: `invalid tokenmax config at ${configFile}: timezone: invalid timezone`,
+    });
+  });
+
   it("is missing when there is no file", async () => {
     expect(await readConfig(configFile)).toEqual({ kind: "missing" });
   });
@@ -91,6 +114,51 @@ describe("writeConfig", () => {
       targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
     });
 
+    expect(JSON.parse(await readFile(configFile, "utf8"))).toEqual({
+      targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
+    });
+  });
+
+  it("creates the config with mode 0600 in its single write", async () => {
+    const spy = vi.spyOn(fsp, "writeFile");
+    try {
+      await writeConfig(configFile, {
+        targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
+      });
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0]).toEqual([
+        `${configFile}.tmp`,
+        expect.any(String),
+        { mode: 0o600 },
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect((await stat(configFile)).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(await readFile(configFile, "utf8"))).toEqual({
+      targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
+    });
+  });
+
+  it("narrows a config file that was already wider", async () => {
+    await writeFile(configFile, "{}\n");
+    await chmod(configFile, 0o644);
+    const spy = vi.spyOn(fsp, "writeFile");
+    try {
+      await writeConfig(configFile, {
+        targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
+      });
+
+      expect(spy.mock.calls.map((call) => call[0])).toEqual([
+        `${configFile}.tmp`,
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect((await stat(configFile)).mode & 0o777).toBe(0o600);
     expect(JSON.parse(await readFile(configFile, "utf8"))).toEqual({
       targets: [{ key: "tmx_a", url: "https://tokenmax.example" }],
     });

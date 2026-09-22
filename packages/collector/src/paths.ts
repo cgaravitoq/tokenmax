@@ -39,6 +39,12 @@ function logDirFor(env: CollectorEnv, home: string): string {
   return resolve(home, ".local", "state", "tokenmax", "logs");
 }
 
+export function systemdUserUnitDir(env: CollectorEnv): string {
+  return env.xdgConfigHome === undefined
+    ? resolve(env.home, ".config", "systemd", "user")
+    : resolve(env.xdgConfigHome, "systemd", "user");
+}
+
 export function collectorPaths(env: CollectorEnv): CollectorPaths {
   const home = resolve(env.tokenmaxHome ?? env.home);
   const configHome =
@@ -56,9 +62,9 @@ export function collectorPaths(env: CollectorEnv): CollectorPaths {
       "dev.tokenmax.collector.plist",
     ),
     pricesFile: resolve(configHome, "tokenmax", "litellm-prices.json"),
-    service: resolve(home, ".config", "systemd", "user", "tokenmax.service"),
+    service: resolve(configHome, "systemd", "user", "tokenmax.service"),
     stderrLog: resolve(logDir, "tokenmax.err.log"),
     stdoutLog: resolve(logDir, "tokenmax.log"),
-    timer: resolve(home, ".config", "systemd", "user", "tokenmax.timer"),
+    timer: resolve(configHome, "systemd", "user", "tokenmax.timer"),
   };
 }
