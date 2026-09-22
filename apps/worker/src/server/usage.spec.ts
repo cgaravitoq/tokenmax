@@ -209,7 +209,7 @@ describe("recordUsage", () => {
     ).toEqual([{ model: "claude-fable-5-1" }]);
   });
 
-  it("removes the days inside the window the report does not carry", async () => {
+  it("replaces every date of its window and leaves the dates outside it", async () => {
     const sqlite = database();
     const db = sqlite.asD1();
     const userId = seedUser(sqlite);
@@ -220,9 +220,11 @@ describe("recordUsage", () => {
       report(
         "mac-1",
         [
+          tokensDay("2026-09-07", 4),
           tokensDay("2026-09-08", 5),
           tokensDay("2026-09-09", 6),
           tokensDay("2026-09-10", 7),
+          tokensDay("2026-09-11", 8),
         ],
         "UTC",
         ["anthropic"],
@@ -245,7 +247,107 @@ describe("recordUsage", () => {
       sqlite.query<{ date: string }>(
         "SELECT date FROM usage_days ORDER BY date",
       ),
-    ).toEqual([{ date: "2026-09-08" }, { date: "2026-09-10" }]);
+    ).toEqual([
+      { date: "2026-09-07" },
+      { date: "2026-09-08" },
+      { date: "2026-09-10" },
+      { date: "2026-09-11" },
+    ]);
+  });
+
+  it("replaces the dates of a report whose days arrive out of order", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const userId = seedUser(sqlite);
+
+    await recordUsage(
+      db,
+      userId,
+      report(
+        "mac-1",
+        [tokensDay("2026-09-05", 5), tokensDay("2026-09-06", 6)],
+        "UTC",
+        ["anthropic"],
+      ),
+      reportedAt,
+    );
+    await recordUsage(
+      db,
+      userId,
+      report(
+        "mac-1",
+        [
+          day({ date: "2026-09-06", input: 60, model: "claude-fable-5-1" }),
+          day({ date: "2026-09-05", input: 50, model: "claude-fable-5-1" }),
+        ],
+        "UTC",
+        ["anthropic"],
+      ),
+      reportedAt,
+    );
+
+    expect(
+      sqlite.query<{ date: string; model: string }>(
+        "SELECT date, model FROM usage_days ORDER BY date",
+      ),
+    ).toEqual([
+      { date: "2026-09-05", model: "claude-fable-5-1" },
+      { date: "2026-09-06", model: "claude-fable-5-1" },
+    ]);
+  });
+
+  it("keeps each day's prune in the batch that replaces its rows", async () => {
+    const sqlite = database();
+    const db = sqlite.asD1();
+    const userId = seedUser(sqlite);
+
+    await recordUsage(
+      db,
+      userId,
+      report(
+        "mac-1",
+        [tokensDay("2026-09-05", 1), tokensDay("2026-09-06", 2)],
+        "UTC",
+        ["anthropic"],
+      ),
+      reportedAt,
+    );
+    const dayRows = (date: string): UsageDay[] =>
+      Array.from({ length: 750 }, (_, index) =>
+        day({ date, input: index + 1, model: `model-${index}` }),
+      );
+    let batches = 0;
+    sqlite.beforeBatch = () => {
+      batches += 1;
+      if (batches === 2) {
+        throw new Error("the second batch fails");
+      }
+    };
+
+    await expect(
+      recordUsage(
+        db,
+        userId,
+        report(
+          "mac-1",
+          [...dayRows("2026-09-05"), ...dayRows("2026-09-06")],
+          "UTC",
+          ["anthropic"],
+        ),
+        reportedAt,
+      ),
+    ).rejects.toThrow("the second batch fails");
+    sqlite.beforeBatch = undefined;
+
+    const stored = sqlite.query<{ date: string; model: string }>(
+      "SELECT date, model FROM usage_days ORDER BY date, model",
+    );
+    expect(stored.filter(({ date }) => date === "2026-09-05")).toHaveLength(
+      750,
+    );
+    expect(stored.filter(({ date }) => date === "2026-09-06")).toEqual([
+      { date: "2026-09-06", model: "claude-opus-5" },
+    ]);
   });
 
   it("leaves the rows of a provider the report does not cover", async () => {
