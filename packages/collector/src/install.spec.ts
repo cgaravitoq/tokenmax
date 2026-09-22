@@ -188,6 +188,24 @@ describe("install", () => {
     ]);
   });
 
+  it("keeps one target when a url gets a trailing slash", async () => {
+    const home = await makeHome();
+    const paths = collectorPaths({ home });
+    const base = {
+      cliPath,
+      env: { home },
+      execPath,
+      platform: "darwin" as const,
+      uid: 501,
+    };
+    await install({ ...base, key: "tmx_first", url: "https://tv.example" });
+    await install({ ...base, key: "tmx_second", url: "https://tv.example/" });
+
+    expect(
+      JSON.parse(await readFile(paths.configFile, "utf8")).targets,
+    ).toEqual([{ key: "tmx_second", url: "https://tv.example" }]);
+  });
+
   it("stores the canonical spelling of a non-machine zone", async () => {
     const home = await makeHome();
     const paths = collectorPaths({ home });

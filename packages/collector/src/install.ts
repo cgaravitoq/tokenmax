@@ -55,6 +55,8 @@ const resolvePlatform = (value: NodeJS.Platform): SupportedPlatform => {
 const resolveCliPath = (): string =>
   fileURLToPath(new URL("./cli.ts", import.meta.url));
 
+const canonicalUrl = (url: string): string => url.replace(/\/+$/, "");
+
 function scheduleFiles(
   platform: SupportedPlatform,
   paths: { plist: string; service: string; timer: string },
@@ -85,11 +87,12 @@ export async function install(options: InstallOptions): Promise<InstallPlan> {
   if (timezone === null) {
     throw new Error(`invalid timezone: ${requestedTimezone}`);
   }
+  const url = canonicalUrl(options.url);
   const others = (await configuredTargets(paths.configFile)).filter(
-    (target) => target.url !== options.url,
+    (target) => canonicalUrl(target.url) !== url,
   );
   const config = collectorConfig.parse({
-    targets: [...others, { key: options.key, url: options.url }],
+    targets: [...others, { key: options.key, url }],
     timezone,
   });
   const cliPath = options.cliPath ?? resolveCliPath();
