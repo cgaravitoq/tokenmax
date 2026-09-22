@@ -367,6 +367,27 @@ describe("install", () => {
     );
   });
 
+  it("quotes a plist path a shell would split", async () => {
+    const home = await makeHome("tokenmax-esc-&<>-");
+    const lines: string[] = [];
+    const paths = collectorPaths({ home });
+
+    await install({
+      cliPath,
+      env: { home },
+      execPath,
+      key: "tmx_secret_value",
+      log: (line) => lines.push(line),
+      platform: "darwin",
+      uid: 501,
+      url: "http://localhost:8797",
+    });
+
+    expect(lines.at(-1)).toBe(
+      `load: launchctl bootstrap gui/501 '${paths.plist}'`,
+    );
+  });
+
   it("warns when the unit lands outside the systemd load path", async () => {
     const home = await makeHome();
     const tokenmaxHome = join(home, "tmhome");

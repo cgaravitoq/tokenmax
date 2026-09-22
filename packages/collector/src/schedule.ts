@@ -13,6 +13,11 @@ const escapeXml = (value: string): string =>
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
 
+const shellSafe = /^[A-Za-z0-9/._:@+,=^-]+$/;
+
+const quoteForShell = (value: string): string =>
+  shellSafe.test(value) ? value : `'${value.replaceAll("'", () => "'\\''")}'`;
+
 const escapeSystemd = (value: string): string =>
   value
     .replaceAll("\\", () => "\\\\")
@@ -76,6 +81,6 @@ export function loadCommand(
   uid: number,
 ): string {
   return platform === "darwin"
-    ? `launchctl bootstrap gui/${uid} ${plistPath}`
+    ? `launchctl bootstrap gui/${uid} ${quoteForShell(plistPath)}`
     : "systemctl --user enable --now tokenmax.timer";
 }
